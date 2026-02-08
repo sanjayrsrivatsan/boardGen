@@ -2,7 +2,7 @@
 """
 Sampling (reverse process) for discrete masked diffusion.
 
-Implements confidence-based iterative unmasking.
+Implements confidence-based iterative unmasking with size logit masking.
 """
 
 from typing import Optional, List, Dict
@@ -19,6 +19,7 @@ class DiffusionSampler:
     Iterative unmasking sampler for discrete masked diffusion.
 
     Uses confidence-based selection to unmask tokens progressively.
+    Applies size logit masks to constrain generation to valid placements.
     """
 
     def __init__(
@@ -27,12 +28,14 @@ class DiffusionSampler:
         MASK_TOKEN: int,
         PAD_TOKEN: int,
         L_max: int,
+        size_logit_masks: Dict[int, torch.Tensor] = None,
         schedule: str = "cosine",
     ):
         self.model = model
         self.MASK_TOKEN = MASK_TOKEN
         self.PAD_TOKEN = PAD_TOKEN
         self.L_max = L_max
+        self.size_logit_masks = size_logit_masks or {}
 
         if schedule == "cosine":
             self.gamma = cosine_schedule
@@ -48,10 +51,12 @@ class DiffusionSampler:
         n_steps: int = 32,
         difficulty: Optional[torch.Tensor] = None,
         angle: Optional[torch.Tensor] = None,
+        board_size: Optional[torch.Tensor] = None,
         is_classic: Optional[torch.Tensor] = None,
         quality: Optional[torch.Tensor] = None,
         guidance_scale: float = 1.0,
         temperature: float = 1.0,
+        size_idx: int = None,
         fixed_holds: Optional[List[int]] = None,
     ) -> torch.Tensor:
         """
@@ -62,9 +67,10 @@ class DiffusionSampler:
             n_holds: Target number of holds per climb
             device: Compute device
             n_steps: Number of diffusion steps
-            difficulty, angle, is_classic, quality: Conditioning (scalars or (n_samples,))
+            difficulty, angle, board_size, is_classic, quality: Conditioning
             guidance_scale: CFG strength
             temperature: Sampling temperature
+            size_idx: Board size index for logit masking (required for multi-size boards)
             fixed_holds: Optional list of token IDs to keep fixed
 
         Returns:
@@ -85,11 +91,20 @@ class DiffusionSampler:
         # Track which positions are fixed (never remask)
         fixed_mask = x != self.MASK_TOKEN
 
+        # Get size logit mask
+        size_mask = None
+        if size_idx is not None and size_idx in self.size_logit_masks:
+            size_mask = self.size_logit_masks[size_idx].to(device)
+
         # Prepare conditioning tensors
         if difficulty is not None and not isinstance(difficulty, torch.Tensor):
             difficulty = torch.full((n_samples,), difficulty, device=device)
         if angle is not None and not isinstance(angle, torch.Tensor):
             angle = torch.full((n_samples,), angle, dtype=torch.long, device=device)
+        if board_size is not None and not isinstance(board_size, torch.Tensor):
+            board_size = torch.full((n_samples,), board_size, dtype=torch.long, device=device)
+        elif board_size is None and size_idx is not None:
+            board_size = torch.full((n_samples,), size_idx, dtype=torch.long, device=device)
         if is_classic is not None and not isinstance(is_classic, torch.Tensor):
             is_classic = torch.full((n_samples,), is_classic, dtype=torch.bool, device=device)
         if quality is not None and not isinstance(quality, torch.Tensor):
@@ -105,12 +120,16 @@ class DiffusionSampler:
             # Get model predictions with CFG
             logits = get_conditional_logits(
                 self.model, x, t_tensor,
-                difficulty, angle, is_classic, quality,
+                difficulty, angle, board_size, is_classic, quality,
                 guidance_scale,
             )
 
             # Apply temperature
             logits = logits / temperature
+
+            # Apply size logit mask (hard constraint)
+            if size_mask is not None:
+                logits[:, :, ~size_mask] = float("-inf")
 
             # Compute probabilities
             probs = F.softmax(logits, dim=-1)

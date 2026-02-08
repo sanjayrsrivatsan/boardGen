@@ -4,6 +4,9 @@ layout_id: 1                     # original layout - discover from database
 set_ids: [1]
 angle_conditioning: true
 angle_range: [0, 70]
+size_conditioning: true
+available_sizes: ["7x10", "8x12", "12x12", "16x12"]
+default_size: "16x12"            # largest size - used for vocabulary construction
 L_max: 32                       # Kilter climbs can be longer
 model_size: small
 

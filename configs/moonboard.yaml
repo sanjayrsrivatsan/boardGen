@@ -4,6 +4,9 @@ layout_id: 1                     # 2024 set at 40 - discover from database
 set_ids: [1]
 angle_conditioning: false        # fixed angle
 default_angle: 40
+size_conditioning: false         # effectively one size
+available_sizes: ["8x11"]
+default_size: "8x11"
 L_max: 24
 model_size: small
 

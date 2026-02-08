@@ -73,6 +73,7 @@ class GenerateRequest(BaseModel):
     n_samples: int = 10
     difficulty: Optional[float] = None
     angle: Optional[int] = None
+    board_size: Optional[str] = None
     is_classic: bool = False
     quality: Optional[float] = None
     guidance_scale: float = 3.0
@@ -116,6 +117,8 @@ async def list_boards():
             "V_role": info["vocab_meta"]["V_role"],
             "L_max": info["vocab_meta"]["L_max"],
             "angle_conditioning": info["config"].get("angle_conditioning", True),
+            "size_conditioning": info["config"].get("size_conditioning", True),
+            "board_sizes": info["vocab_meta"].get("board_sizes", []),
         })
     return result
 
@@ -138,6 +141,9 @@ async def get_board_config(board: str):
         "angle_conditioning": config.get("angle_conditioning", True),
         "angle_range": config.get("angle_range", [0, 70]),
         "default_angle": config.get("default_angle"),
+        "size_conditioning": config.get("size_conditioning", True),
+        "board_sizes": vocab_meta.get("board_sizes", []),
+        "default_size": config.get("default_size"),
         "deep_link_scheme": config.get("deep_link_scheme", ""),
         "placement_coords": vocab_meta["placement_coords"].tolist(),
         "placement_ids": list(vocab_meta["placement_index_to_id"].values()),
@@ -155,6 +161,7 @@ async def generate_climbs(request: GenerateRequest):
         n_samples=request.n_samples,
         difficulty=request.difficulty,
         angle=request.angle,
+        board_size=request.board_size,
         is_classic=request.is_classic,
         quality=request.quality,
         guidance_scale=request.guidance_scale,

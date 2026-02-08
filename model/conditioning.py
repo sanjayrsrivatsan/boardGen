@@ -34,6 +34,7 @@ def get_conditional_logits(
     t: torch.Tensor,
     difficulty: torch.Tensor = None,
     angle: torch.Tensor = None,
+    board_size: torch.Tensor = None,
     is_classic: torch.Tensor = None,
     quality: torch.Tensor = None,
     guidance_scale: float = 1.0,
@@ -45,7 +46,7 @@ def get_conditional_logits(
         model: Diffusion transformer model
         x_t: Current noisy sequence (B, L)
         t: Current timestep (B,)
-        difficulty, angle, is_classic, quality: Optional conditioning
+        difficulty, angle, board_size, is_classic, quality: Optional conditioning
         guidance_scale: CFG strength
 
     Returns:
@@ -59,6 +60,8 @@ def get_conditional_logits(
         difficulty = torch.zeros(B, device=device)
     if angle is None:
         angle = torch.zeros(B, dtype=torch.long, device=device)
+    if board_size is None:
+        board_size = torch.zeros(B, dtype=torch.long, device=device)
     if is_classic is None:
         is_classic = torch.zeros(B, dtype=torch.bool, device=device)
     if quality is None:
@@ -66,8 +69,9 @@ def get_conditional_logits(
 
     # Conditional forward pass (no masking)
     logits_cond = model(
-        x_t, t, difficulty, angle, is_classic, quality,
-        mask_diff=None, mask_angle=None, mask_classic=None, mask_quality=None,
+        x_t, t, difficulty, angle, board_size, is_classic, quality,
+        mask_diff=None, mask_angle=None, mask_size=None,
+        mask_classic=None, mask_quality=None,
     )
 
     if guidance_scale == 0.0:
@@ -76,8 +80,8 @@ def get_conditional_logits(
     # Unconditional forward pass (all labels masked)
     all_true = torch.ones(B, dtype=torch.bool, device=device)
     logits_uncond = model(
-        x_t, t, difficulty, angle, is_classic, quality,
-        mask_diff=all_true, mask_angle=all_true,
+        x_t, t, difficulty, angle, board_size, is_classic, quality,
+        mask_diff=all_true, mask_angle=all_true, mask_size=all_true,
         mask_classic=all_true, mask_quality=all_true,
     )
 

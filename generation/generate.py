@@ -3,8 +3,8 @@
 CLI for generating climbing problems.
 
 Usage:
-    python generation/generate.py --board tension --difficulty 14 --angle 40 --n 10
-    python generation/generate.py --board kilter --difficulty 16 --angle 45 --n 10
+    python generation/generate.py --board tension --difficulty 14 --angle 40 --size 12x12 --n 10
+    python generation/generate.py --board kilter --difficulty 16 --angle 45 --size 8x12 --n 10
     python generation/generate.py --board moonboard --difficulty 18 --n 10 --classic
 """
 
@@ -42,6 +42,7 @@ def generate(
     n_samples: int = 10,
     difficulty: Optional[float] = None,
     angle: Optional[int] = None,
+    board_size: Optional[str] = None,
     is_classic: bool = False,
     quality: Optional[float] = None,
     guidance_scale: float = 3.0,
@@ -57,6 +58,7 @@ def generate(
         n_samples: Number of climbs to generate
         difficulty: Target numeric difficulty (None = unconditional)
         angle: Wall angle in degrees (ignored for moonboard)
+        board_size: Target board size (e.g., "12x12", "10x8")
         is_classic: Target classic/benchmark quality
         quality: Target star rating
         guidance_scale: CFG strength
@@ -77,12 +79,30 @@ def generate(
     model = model.to(device)
     model.eval()
 
-    # Create sampler
+    # Resolve board size
+    available_sizes = vocab_meta.get("board_sizes", [])
+    size_idx = None
+
+    if board_size is not None:
+        if board_size in available_sizes:
+            size_idx = available_sizes.index(board_size)
+        else:
+            print(f"Warning: Size '{board_size}' not found. Available: {available_sizes}")
+            size_idx = len(available_sizes) - 1  # default to largest
+    elif available_sizes:
+        # Default to largest size
+        size_idx = len(available_sizes) - 1
+        board_size = available_sizes[size_idx]
+
+    print(f"Using board size: {board_size} (index {size_idx})")
+
+    # Create sampler with size logit masks
     sampler = DiffusionSampler(
         model,
         vocab_meta["MASK_TOKEN"],
         vocab_meta["PAD_TOKEN"],
         vocab_meta["L_max"],
+        size_logit_masks=vocab_meta.get("size_logit_masks", {}),
     )
 
     # Determine sequence length
@@ -103,6 +123,7 @@ def generate(
     # Prepare conditioning
     diff_tensor = torch.full((n_samples,), difficulty, device=device) if difficulty else None
     angle_tensor = torch.full((n_samples,), angle or 40, dtype=torch.long, device=device)
+    size_tensor = torch.full((n_samples,), size_idx or 0, dtype=torch.long, device=device)
     classic_tensor = torch.full((n_samples,), is_classic, dtype=torch.bool, device=device)
     quality_tensor = torch.full((n_samples,), quality or 0, device=device) if quality else None
 
@@ -115,10 +136,12 @@ def generate(
         n_steps=n_steps,
         difficulty=diff_tensor,
         angle=angle_tensor,
+        board_size=size_tensor,
         is_classic=classic_tensor,
         quality=quality_tensor,
         guidance_scale=guidance_scale,
         temperature=temperature,
+        size_idx=size_idx,
     )
 
     # Convert to output format
@@ -141,6 +164,7 @@ def generate(
                 "board": board,
                 "difficulty": difficulty,
                 "angle": angle,
+                "board_size": board_size,
                 "is_classic": is_classic,
                 "quality": quality,
                 "guidance_scale": guidance_scale,
@@ -157,6 +181,7 @@ def main():
     parser.add_argument("--n", type=int, default=10, help="Number of climbs to generate")
     parser.add_argument("--difficulty", type=float, help="Target numeric difficulty")
     parser.add_argument("--angle", type=int, help="Wall angle in degrees")
+    parser.add_argument("--size", type=str, help="Board size (e.g., 12x12, 10x8)")
     parser.add_argument("--classic", action="store_true", help="Target classic quality")
     parser.add_argument("--quality", type=float, help="Target star rating")
     parser.add_argument("--guidance", type=float, default=3.0, help="CFG strength")
@@ -172,6 +197,7 @@ def main():
         n_samples=args.n,
         difficulty=args.difficulty,
         angle=args.angle,
+        board_size=args.size,
         is_classic=args.classic,
         quality=args.quality,
         guidance_scale=args.guidance,

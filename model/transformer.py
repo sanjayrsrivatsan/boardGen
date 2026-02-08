@@ -136,6 +136,8 @@ class DiffusionTransformer(nn.Module):
         MASK_TOKEN: int,
         PAD_TOKEN: int,
         angle_conditioning: bool = True,
+        size_conditioning: bool = True,
+        n_sizes: int = 4,
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -154,7 +156,10 @@ class DiffusionTransformer(nn.Module):
         )
         self.timestep_embedding = TimestepEmbedding(d_model)
         self.label_embedding = LabelEmbedding(
-            d_model, angle_conditioning=angle_conditioning
+            d_model,
+            angle_conditioning=angle_conditioning,
+            size_conditioning=size_conditioning,
+            n_sizes=n_sizes,
         )
 
         # Transformer layers
@@ -175,10 +180,12 @@ class DiffusionTransformer(nn.Module):
         t: torch.Tensor,
         difficulty: torch.Tensor,
         angle: torch.Tensor,
+        board_size: torch.Tensor,
         is_classic: torch.Tensor,
         quality: torch.Tensor,
         mask_diff: torch.Tensor = None,
         mask_angle: torch.Tensor = None,
+        mask_size: torch.Tensor = None,
         mask_classic: torch.Tensor = None,
         mask_quality: torch.Tensor = None,
     ) -> torch.Tensor:
@@ -188,7 +195,7 @@ class DiffusionTransformer(nn.Module):
         Args:
             token_ids: (B, L) token sequences
             t: (B,) timesteps in [0, 1]
-            difficulty, angle, is_classic, quality: conditioning labels
+            difficulty, angle, board_size, is_classic, quality: conditioning labels
             mask_*: CFG masking for each label
 
         Returns:
@@ -204,8 +211,8 @@ class DiffusionTransformer(nn.Module):
 
         # Label conditioning
         y_emb = self.label_embedding(
-            difficulty, angle, is_classic, quality,
-            mask_diff, mask_angle, mask_classic, mask_quality,
+            difficulty, angle, board_size, is_classic, quality,
+            mask_diff, mask_angle, mask_size, mask_classic, mask_quality,
         )  # (B, d_model)
 
         # Combined conditioning
@@ -236,6 +243,8 @@ class DiffusionTransformer(nn.Module):
         else:  # "full"
             d_model, n_heads, n_layers, d_ff = 256, 8, 6, 1024
 
+        n_sizes = len(vocab_meta.get("board_sizes", ["default"]))
+
         return cls(
             V_total=vocab_meta["V_total"],
             d_model=d_model,
@@ -247,4 +256,6 @@ class DiffusionTransformer(nn.Module):
             MASK_TOKEN=vocab_meta["MASK_TOKEN"],
             PAD_TOKEN=vocab_meta["PAD_TOKEN"],
             angle_conditioning=config.get("angle_conditioning", True),
+            size_conditioning=config.get("size_conditioning", True),
+            n_sizes=n_sizes,
         )

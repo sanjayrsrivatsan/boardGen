@@ -4,7 +4,7 @@ Stage 1.2-1.8: Data Processing Pipeline
 
 Converts SQLite database to token sequences for diffusion model training.
 Handles vocabulary construction, coordinate normalization, canonical ordering,
-filtering, and sample weighting.
+filtering, board size detection, and sample weighting.
 
 Usage:
     python data/process.py --config configs/tension.yaml
@@ -16,7 +16,7 @@ import argparse
 import re
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Set
 
 import numpy as np
 import torch
@@ -56,7 +56,38 @@ def discover_layouts_and_sets(conn: sqlite3.Connection) -> None:
         ORDER BY psls.layout_id, psls.set_id
     """)
     for row in cursor:
-        print(f"  ID {row['id']}: layout={row['layout_id']} ({row['layout_name']}), set={row['set_id']}")
+        print(f"  ID {row['id']}: layout={row['layout_id']} ({row['layout_name']}), set={row['set_id']}, size={row['product_size_id']}")
+
+
+def get_board_sizes(conn: sqlite3.Connection, layout_id: int) -> Dict[str, Dict]:
+    """
+    Get all available board sizes for a layout.
+    Returns dict: size_name -> {id, edge_left, edge_right, edge_bottom, edge_top}
+    """
+    cursor = conn.execute("""
+        SELECT DISTINCT ps.id, ps.edge_left, ps.edge_right, ps.edge_bottom, ps.edge_top,
+               ps.name, ps.description
+        FROM product_sizes ps
+        JOIN product_sizes_layouts_sets psls ON ps.id = psls.product_size_id
+        WHERE psls.layout_id = ?
+        ORDER BY (ps.edge_right - ps.edge_left) * (ps.edge_top - ps.edge_bottom)
+    """, (layout_id,))
+
+    sizes = {}
+    for row in cursor:
+        # Try to extract size name from description or compute from edges
+        width = row["edge_right"] - row["edge_left"]
+        height = row["edge_top"] - row["edge_bottom"]
+        # Normalize to approximate grid size (boards typically have ~1 unit per row/col)
+        name = row["name"] or row["description"] or f"{int(width)}x{int(height)}"
+        sizes[name] = {
+            "id": row["id"],
+            "edge_left": row["edge_left"],
+            "edge_right": row["edge_right"],
+            "edge_bottom": row["edge_bottom"],
+            "edge_top": row["edge_top"],
+        }
+    return sizes
 
 
 def get_valid_placements(
@@ -79,15 +110,28 @@ def get_valid_placements(
     return {row["placement_id"]: (row["x"], row["y"]) for row in cursor}
 
 
-def get_board_extents(conn: sqlite3.Connection, layout_id: int) -> Tuple[float, float, float, float]:
-    """Get board coordinate extents for normalization."""
-    cursor = conn.execute("""
-        SELECT ps.edge_left, ps.edge_right, ps.edge_bottom, ps.edge_top
-        FROM product_sizes ps
-        JOIN product_sizes_layouts_sets psls ON ps.id = psls.product_size_id
-        WHERE psls.layout_id = ?
-        LIMIT 1
-    """, (layout_id,))
+def get_board_extents(conn: sqlite3.Connection, layout_id: int, size_name: str = None) -> Tuple[float, float, float, float]:
+    """Get board coordinate extents for normalization (uses largest size by default)."""
+    if size_name:
+        # Get specific size
+        cursor = conn.execute("""
+            SELECT ps.edge_left, ps.edge_right, ps.edge_bottom, ps.edge_top
+            FROM product_sizes ps
+            JOIN product_sizes_layouts_sets psls ON ps.id = psls.product_size_id
+            WHERE psls.layout_id = ? AND (ps.name = ? OR ps.description LIKE ?)
+            LIMIT 1
+        """, (layout_id, size_name, f"%{size_name}%"))
+    else:
+        # Get largest size
+        cursor = conn.execute("""
+            SELECT ps.edge_left, ps.edge_right, ps.edge_bottom, ps.edge_top
+            FROM product_sizes ps
+            JOIN product_sizes_layouts_sets psls ON ps.id = psls.product_size_id
+            WHERE psls.layout_id = ?
+            ORDER BY (ps.edge_right - ps.edge_left) * (ps.edge_top - ps.edge_bottom) DESC
+            LIMIT 1
+        """, (layout_id,))
+
     row = cursor.fetchone()
     if row:
         return row["edge_left"], row["edge_right"], row["edge_bottom"], row["edge_top"]
@@ -113,15 +157,56 @@ def parse_frames(frames: str) -> List[Tuple[int, int]]:
     return [(int(p), int(r)) for p, r in matches]
 
 
+def get_compatible_sizes(
+    climb_placements: Set[int],
+    placement_coords: Dict[int, Tuple[float, float]],
+    board_sizes: Dict[str, Dict],
+) -> List[str]:
+    """
+    Return list of board sizes this climb is compatible with.
+    A climb is compatible if all its placements fall within the size's boundaries.
+    """
+    compatible = []
+    for size_name, size_info in board_sizes.items():
+        fits = True
+        for p_id in climb_placements:
+            if p_id not in placement_coords:
+                fits = False
+                break
+            x, y = placement_coords[p_id]
+            if not (size_info["edge_left"] <= x <= size_info["edge_right"] and
+                    size_info["edge_bottom"] <= y <= size_info["edge_top"]):
+                fits = False
+                break
+        if fits:
+            compatible.append(size_name)
+    return compatible
+
+
+def get_minimum_compatible_size(
+    compatible_sizes: List[str],
+    size_order: List[str],
+) -> str:
+    """Get the smallest compatible size (first in the ordered list)."""
+    for size in size_order:
+        if size in compatible_sizes:
+            return size
+    return size_order[-1] if size_order else ""
+
+
 def get_climbs(
     conn: sqlite3.Connection,
     layout_id: int,
     valid_placement_ids: set,
+    placement_coords: Dict[int, Tuple[float, float]],
+    board_sizes: Dict[str, Dict],
+    size_order: List[str],
     L_max: int,
 ) -> List[Dict[str, Any]]:
     """
     Fetch valid climbs with their stats and conditioning labels.
     Applies filtering criteria from spec section 1.5.6.
+    Tags each climb with minimum compatible board size.
     """
     cursor = conn.execute("""
         SELECT
@@ -148,7 +233,8 @@ def get_climbs(
         holds = parse_frames(row["frames"])
 
         # Filter: all placements must be valid
-        if not all(p in valid_placement_ids for p, r in holds):
+        placement_set = set(p for p, r in holds)
+        if not placement_set.issubset(valid_placement_ids):
             continue
 
         # Filter: respect L_max
@@ -159,6 +245,14 @@ def get_climbs(
         if len(holds) < 4:
             continue
 
+        # Determine compatible sizes
+        compatible = get_compatible_sizes(placement_set, placement_coords, board_sizes)
+        if not compatible:
+            continue
+
+        min_size = get_minimum_compatible_size(compatible, size_order)
+        min_size_idx = size_order.index(min_size) if min_size in size_order else 0
+
         climbs.append({
             "uuid": row["uuid"],
             "holds": holds,
@@ -167,6 +261,9 @@ def get_climbs(
             "quality": row["quality_average"] or 0,
             "is_classic": row["benchmark_difficulty"] is not None,
             "ascent_count": row["ascent_count"] or 0,
+            "board_size": min_size,
+            "board_size_idx": min_size_idx,
+            "compatible_sizes": compatible,
         })
 
     return climbs
@@ -176,9 +273,11 @@ def build_vocabulary(
     placements: Dict[int, Tuple[float, float]],
     roles: Dict[int, str],
     board_extents: Tuple[float, float, float, float],
+    board_sizes: Dict[str, Dict],
+    size_order: List[str],
 ) -> Dict[str, Any]:
     """
-    Build token vocabulary and coordinate mappings.
+    Build token vocabulary, coordinate mappings, and size logit masks.
     Token ID = placement_index * V_role + role_index
     """
     # Create index mappings
@@ -197,13 +296,42 @@ def build_vocabulary(
     MASK_TOKEN = V_pos * V_role
     PAD_TOKEN = V_pos * V_role + 1
 
-    # Normalize coordinates
+    # Normalize coordinates relative to largest board
     x_min, x_max, y_min, y_max = board_extents
     coords = np.zeros((V_pos, 2), dtype=np.float32)
+    raw_coords = {}  # Store unnormalized for size mask computation
     for pid, (x, y) in placements.items():
         idx = placement_id_to_index[pid]
         coords[idx, 0] = (x - x_min) / (x_max - x_min) if x_max > x_min else 0.5
         coords[idx, 1] = (y - y_min) / (y_max - y_min) if y_max > y_min else 0.5
+        raw_coords[idx] = (x, y)
+
+    # Build size logit masks
+    # size_logit_masks[size_idx] = BoolTensor of shape (V_total - 1,)
+    # True for tokens whose placement falls within that size's boundaries
+    size_logit_masks = {}
+    for size_idx, size_name in enumerate(size_order):
+        if size_name not in board_sizes:
+            # Default to all valid if size not found
+            mask = torch.ones(V_total - 1, dtype=torch.bool)
+        else:
+            size_info = board_sizes[size_name]
+            mask = torch.zeros(V_total - 1, dtype=torch.bool)
+
+            for p_idx in range(V_pos):
+                x, y = raw_coords[p_idx]
+                valid = (size_info["edge_left"] <= x <= size_info["edge_right"] and
+                        size_info["edge_bottom"] <= y <= size_info["edge_top"])
+                if valid:
+                    # Mark all roles for this placement as valid
+                    for r_idx in range(V_role):
+                        token_id = p_idx * V_role + r_idx
+                        mask[token_id] = True
+
+            # MASK token is always valid (it's at index V_pos * V_role which is V_total - 2)
+            mask[MASK_TOKEN] = True
+
+        size_logit_masks[size_idx] = mask
 
     return {
         "placement_index_to_id": placement_index_to_id,
@@ -217,6 +345,8 @@ def build_vocabulary(
         "V_total": V_total,
         "MASK_TOKEN": MASK_TOKEN,
         "PAD_TOKEN": PAD_TOKEN,
+        "board_sizes": size_order,
+        "size_logit_masks": size_logit_masks,
     }
 
 
@@ -283,15 +413,44 @@ def process_board(config: dict) -> dict:
     set_ids = config["set_ids"]
     L_max = config["L_max"]
     weighting = config.get("weighting", {"alpha": 2.0, "beta": 1.0, "gamma": 0.5})
+    available_sizes = config.get("available_sizes", [])
+    default_size = config.get("default_size", available_sizes[-1] if available_sizes else "")
 
     print(f"\nProcessing {board} board...")
     print(f"  Database: {db_path}")
     print(f"  Layout ID: {layout_id}, Set IDs: {set_ids}")
+    print(f"  Available sizes: {available_sizes}")
+    print(f"  Default (largest) size: {default_size}")
 
     conn = connect_db(db_path)
 
     # Discover available configurations (for reference)
     discover_layouts_and_sets(conn)
+
+    # Get board sizes from database
+    db_sizes = get_board_sizes(conn, layout_id)
+    print(f"\n  Found {len(db_sizes)} board sizes in database: {list(db_sizes.keys())}")
+
+    # Use config sizes if available, otherwise use discovered sizes
+    if available_sizes:
+        # Map config size names to database size info
+        board_sizes = {}
+        for size_name in available_sizes:
+            if size_name in db_sizes:
+                board_sizes[size_name] = db_sizes[size_name]
+            else:
+                # Try to find a matching size
+                for db_name, db_info in db_sizes.items():
+                    if size_name in db_name or db_name in size_name:
+                        board_sizes[size_name] = db_info
+                        break
+        if not board_sizes:
+            board_sizes = db_sizes
+    else:
+        board_sizes = db_sizes
+        available_sizes = list(db_sizes.keys())
+
+    print(f"  Using sizes: {list(board_sizes.keys())}")
 
     # Get placements and roles
     placements = get_valid_placements(conn, layout_id, set_ids)
@@ -300,18 +459,20 @@ def process_board(config: dict) -> dict:
     roles = get_roles(conn)
     print(f"  Found {len(roles)} roles: {list(roles.values())}")
 
-    board_extents = get_board_extents(conn, layout_id)
+    # Get extents from largest size
+    board_extents = get_board_extents(conn, layout_id, default_size)
     print(f"  Board extents: {board_extents}")
 
-    # Build vocabulary
-    vocab_meta = build_vocabulary(placements, roles, board_extents)
+    # Build vocabulary with size masks
+    vocab_meta = build_vocabulary(placements, roles, board_extents, board_sizes, available_sizes)
     vocab_meta["board"] = board
     vocab_meta["L_max"] = L_max
     print(f"  Vocabulary: V_pos={vocab_meta['V_pos']}, V_role={vocab_meta['V_role']}, V_total={vocab_meta['V_total']}")
+    print(f"  Size logit masks computed for {len(vocab_meta['size_logit_masks'])} sizes")
 
-    # Get climbs
+    # Get climbs with size tagging
     valid_placement_ids = set(placements.keys())
-    climbs = get_climbs(conn, layout_id, valid_placement_ids, L_max)
+    climbs = get_climbs(conn, layout_id, valid_placement_ids, placements, board_sizes, available_sizes, L_max)
     print(f"  Found {len(climbs)} valid climbs")
 
     if len(climbs) == 0:
@@ -330,6 +491,7 @@ def process_board(config: dict) -> dict:
     # Extract conditioning labels
     difficulties = torch.tensor([c["difficulty"] for c in climbs], dtype=torch.float32)
     angles = torch.tensor([c["angle"] for c in climbs], dtype=torch.int64)
+    board_size_indices = torch.tensor([c["board_size_idx"] for c in climbs], dtype=torch.int64)
     is_classic = torch.tensor([c["is_classic"] for c in climbs], dtype=torch.bool)
     quality = torch.tensor([c["quality"] for c in climbs], dtype=torch.float32)
     ascent_count = torch.tensor([c["ascent_count"] for c in climbs], dtype=torch.int64)
@@ -348,6 +510,10 @@ def process_board(config: dict) -> dict:
     print(f"\n  Dataset Statistics:")
     print(f"    Difficulty range: {difficulties.min():.1f} - {difficulties.max():.1f}")
     print(f"    Unique angles: {torch.unique(angles).tolist()}")
+    print(f"    Size distribution:")
+    for i, size_name in enumerate(available_sizes):
+        count = (board_size_indices == i).sum().item()
+        print(f"      {size_name}: {count} climbs ({100*count/len(climbs):.1f}%)")
     print(f"    Classics: {is_classic.sum().item()} ({100*is_classic.float().mean():.1f}%)")
     print(f"    Hold count range: {min(seq_lengths)} - {max(seq_lengths)}")
 
@@ -359,6 +525,7 @@ def process_board(config: dict) -> dict:
         "seq_lengths": torch.tensor(seq_lengths, dtype=torch.int64),
         "difficulty": difficulties,
         "angle": angles,
+        "board_size": board_size_indices,
         "is_classic": is_classic,
         "quality": quality,
         "ascent_count": ascent_count,

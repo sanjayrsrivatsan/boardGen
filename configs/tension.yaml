@@ -4,6 +4,9 @@ layout_id: 1                     # primary mirror layout - discover from databas
 set_ids: [1, 2, 3]              # hold sets to include - discover from database
 angle_conditioning: true
 angle_range: [0, 65]
+size_conditioning: true
+available_sizes: ["10x8", "12x8", "12x10", "12x12"]
+default_size: "12x12"            # largest size - used for vocabulary construction
 L_max: 24
 model_size: small                # "small" or "full"
 

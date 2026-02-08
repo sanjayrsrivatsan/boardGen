@@ -150,6 +150,7 @@ class DiffusionTrainer:
         x_0 = batch["sequence"].to(device)
         difficulty = batch["difficulty"].to(device)
         angle = batch["angle"].to(device)
+        board_size = batch["board_size"].to(device)
         is_classic = batch["is_classic"].to(device)
         quality = batch["quality"].to(device)
 
@@ -164,6 +165,7 @@ class DiffusionTrainer:
         # CFG: randomly drop conditioning with probability p_uncond
         mask_diff = torch.rand(B, device=device) < self.p_uncond
         mask_angle = torch.rand(B, device=device) < self.p_uncond
+        mask_size = torch.rand(B, device=device) < self.p_uncond
         mask_classic = torch.rand(B, device=device) < self.p_uncond
         mask_quality = torch.rand(B, device=device) < self.p_uncond
 
@@ -171,13 +173,14 @@ class DiffusionTrainer:
         mask_all = torch.rand(B, device=device) < self.p_uncond
         mask_diff = mask_diff | mask_all
         mask_angle = mask_angle | mask_all
+        mask_size = mask_size | mask_all
         mask_classic = mask_classic | mask_all
         mask_quality = mask_quality | mask_all
 
         # Forward pass
         logits = self.model(
-            x_t, t, difficulty, angle, is_classic, quality,
-            mask_diff, mask_angle, mask_classic, mask_quality,
+            x_t, t, difficulty, angle, board_size, is_classic, quality,
+            mask_diff, mask_angle, mask_size, mask_classic, mask_quality,
         )
 
         # Compute loss

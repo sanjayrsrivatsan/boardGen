@@ -1,12 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 /**
  * Generation controls panel.
- * Adapts to board configuration (e.g., hides angle for MoonBoard).
+ * Adapts to board configuration (e.g., hides angle for MoonBoard, shows size selector).
  */
 export default function Controls({ config, onGenerate, loading }) {
   const [difficulty, setDifficulty] = useState(14)
   const [angle, setAngle] = useState(config.default_angle || 40)
+  const [boardSize, setBoardSize] = useState(config.default_size || config.board_sizes?.[config.board_sizes.length - 1] || '')
   const [isClassic, setIsClassic] = useState(false)
   const [quality, setQuality] = useState(3.0)
   const [guidance, setGuidance] = useState(3.0)
@@ -14,12 +15,20 @@ export default function Controls({ config, onGenerate, loading }) {
   const [nSamples, setNSamples] = useState(10)
   const [nHolds, setNHolds] = useState('')
 
+  // Update defaults when config changes
+  useEffect(() => {
+    if (config.default_angle) setAngle(config.default_angle)
+    if (config.default_size) setBoardSize(config.default_size)
+    else if (config.board_sizes?.length > 0) setBoardSize(config.board_sizes[config.board_sizes.length - 1])
+  }, [config])
+
   const handleSubmit = (e) => {
     e.preventDefault()
     onGenerate({
       n_samples: nSamples,
       difficulty,
       angle: config.angle_conditioning ? angle : undefined,
+      board_size: config.size_conditioning ? boardSize : undefined,
       is_classic: isClassic,
       quality,
       guidance_scale: guidance,
@@ -79,6 +88,22 @@ export default function Controls({ config, onGenerate, loading }) {
             onChange={e => setAngle(Number(e.target.value))}
             style={{ width: '100%' }}
           />
+        </div>
+      )}
+
+      {/* Board size (only if multiple sizes available) */}
+      {config.size_conditioning && config.board_sizes?.length > 1 && (
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={labelStyle}>Board Size</label>
+          <select
+            value={boardSize}
+            onChange={e => setBoardSize(e.target.value)}
+            style={inputStyle}
+          >
+            {config.board_sizes.map(size => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
         </div>
       )}
 

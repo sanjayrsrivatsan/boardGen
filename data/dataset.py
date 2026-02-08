@@ -23,6 +23,7 @@ class ClimbDataset(Dataset):
         - seq_length: number of active holds
         - difficulty: numeric difficulty
         - angle: wall angle in degrees
+        - board_size: board size index
         - is_classic: benchmark/classic status
         - quality: average star rating
     """
@@ -41,6 +42,7 @@ class ClimbDataset(Dataset):
             "seq_length": self.data["seq_lengths"][idx],
             "difficulty": self.data["difficulty"][idx],
             "angle": self.data["angle"][idx],
+            "board_size": self.data["board_size"][idx],
             "is_classic": self.data["is_classic"][idx],
             "quality": self.data["quality"][idx],
         }
@@ -69,6 +71,18 @@ class ClimbDataset(Dataset):
     @property
     def PAD_TOKEN(self) -> int:
         return self.vocab_meta["PAD_TOKEN"]
+
+    @property
+    def board_sizes(self) -> list:
+        return self.vocab_meta.get("board_sizes", [])
+
+    @property
+    def n_sizes(self) -> int:
+        return len(self.board_sizes)
+
+    def get_size_logit_mask(self, size_idx: int) -> torch.Tensor:
+        """Get logit mask for a specific board size."""
+        return self.vocab_meta["size_logit_masks"].get(size_idx, None)
 
 
 def get_dataloader(
