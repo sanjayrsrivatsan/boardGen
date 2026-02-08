@@ -142,26 +142,52 @@ def train_val_split(
     seed: int = 42,
 ) -> Tuple["TrainValDataset", "TrainValDataset"]:
     """
-    Split dataset into train and validation sets.
+    Split dataset into train and validation sets BY CLIMB UUID.
+
+    This ensures no data leakage: all angle variations of the same climb
+    stay together in either train or val set.
 
     Args:
         dataset: Full ClimbDataset
-        val_fraction: Fraction of data for validation (default 10%)
+        val_fraction: Fraction of unique climbs for validation (default 10%)
         seed: Random seed for reproducibility
 
     Returns:
         (train_dataset, val_dataset) tuple
     """
-    n = len(dataset)
-    n_val = int(n * val_fraction)
-    n_train = n - n_val
+    # Get climb UUIDs for each sample
+    climb_uuids = dataset.data.get("climb_uuids", None)
 
-    # Deterministic split
-    generator = torch.Generator().manual_seed(seed)
-    indices = torch.randperm(n, generator=generator).tolist()
+    if climb_uuids is None:
+        # Fallback to sample-level split if UUIDs not available
+        n = len(dataset)
+        n_val = int(n * val_fraction)
+        generator = torch.Generator().manual_seed(seed)
+        indices = torch.randperm(n, generator=generator).tolist()
+        train_indices = indices[n_val:]
+        val_indices = indices[:n_val]
+    else:
+        # Split by unique climb UUID to prevent leakage
+        unique_uuids = list(set(climb_uuids))
+        n_unique = len(unique_uuids)
+        n_val_climbs = int(n_unique * val_fraction)
 
-    train_indices = indices[:n_train]
-    val_indices = indices[n_train:]
+        # Deterministic shuffle of UUIDs
+        generator = torch.Generator().manual_seed(seed)
+        perm = torch.randperm(n_unique, generator=generator).tolist()
+        shuffled_uuids = [unique_uuids[i] for i in perm]
+
+        val_uuids = set(shuffled_uuids[:n_val_climbs])
+        train_uuids = set(shuffled_uuids[n_val_climbs:])
+
+        # Map samples to train/val based on their climb UUID
+        train_indices = []
+        val_indices = []
+        for idx, uuid in enumerate(climb_uuids):
+            if uuid in val_uuids:
+                val_indices.append(idx)
+            else:
+                train_indices.append(idx)
 
     train_dataset = TrainValDataset(dataset, train_indices)
     val_dataset = TrainValDataset(dataset, val_indices)
