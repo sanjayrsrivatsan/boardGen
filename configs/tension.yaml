@@ -1,11 +1,12 @@
 board: tension
 db_path: data/tension.sqlite
-layout_id: 1                     # primary mirror layout - discover from database
-set_ids: [1, 2, 3]              # hold sets to include - discover from database
+layout_id: 10                    # Tension Board 2 Mirror layout
+set_ids: [12, 13]               # TB2 hold sets (wood + dual-tex)
 angle_conditioning: true
 angle_range: [0, 65]
 size_conditioning: true
-available_sizes: ["10x8", "12x8", "12x10", "12x12"]
+# Sizes from product_sizes: 6=12x12, 7=10x12, 8=12x8, 9=10x8
+available_sizes: ["10x8", "12x8", "10x12", "12x12"]
 default_size: "12x12"            # largest size - used for vocabulary construction
 L_max: 24
 model_size: small                # "small" or "full"

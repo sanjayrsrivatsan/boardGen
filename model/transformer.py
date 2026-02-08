@@ -82,13 +82,13 @@ class TransformerBlock(nn.Module):
         self,
         x: torch.Tensor,
         cond: torch.Tensor,
-        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
             x: Input of shape (B, L, d_model)
             cond: Conditioning of shape (B, d_model)
-            attn_mask: Attention mask of shape (B, L, L), True = masked
+            key_padding_mask: (B, L) bool mask, True = PAD position to ignore
 
         Returns:
             Output of shape (B, L, d_model)
@@ -96,18 +96,11 @@ class TransformerBlock(nn.Module):
         # Self-attention with residual
         normed = self.adaln1(x, cond)
 
-        # Expand attention mask for multihead attention
-        if attn_mask is not None:
-            # Convert (B, L, L) bool mask to (B*n_heads, L, L) float mask
-            B, L, _ = attn_mask.shape
-            # True means "do not attend", need to convert to float with -inf
-            attn_mask_float = attn_mask.float().masked_fill(attn_mask, float("-inf"))
-            attn_mask_float = attn_mask_float.unsqueeze(1).expand(-1, self.n_heads, -1, -1)
-            attn_mask_float = attn_mask_float.reshape(B * self.n_heads, L, L)
-        else:
-            attn_mask_float = None
-
-        attn_out, _ = self.attn(normed, normed, normed, attn_mask=attn_mask_float)
+        # Use key_padding_mask to ignore PAD positions in attention
+        attn_out, _ = self.attn(
+            normed, normed, normed,
+            key_padding_mask=key_padding_mask,
+        )
         x = x + self.dropout(attn_out)
 
         # Feedforward with residual
@@ -218,14 +211,12 @@ class DiffusionTransformer(nn.Module):
         # Combined conditioning
         cond = t_emb + y_emb  # (B, d_model)
 
-        # Attention mask: don't attend to/from PAD positions
-        pad_mask = token_ids == self.PAD_TOKEN  # (B, L)
-        # Create (B, L, L) mask where True means "do not attend"
-        attn_mask = pad_mask.unsqueeze(1) | pad_mask.unsqueeze(2)
+        # Key padding mask: True for PAD positions to ignore
+        key_padding_mask = token_ids == self.PAD_TOKEN  # (B, L)
 
         # Transformer layers
         for layer in self.layers:
-            x = layer(x, cond, attn_mask)
+            x = layer(x, cond, key_padding_mask)
 
         # Final norm and output projection
         x = self.final_norm(x)

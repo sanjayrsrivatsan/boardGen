@@ -59,6 +59,28 @@ def discover_layouts_and_sets(conn: sqlite3.Connection) -> None:
         print(f"  ID {row['id']}: layout={row['layout_id']} ({row['layout_name']}), set={row['set_id']}, size={row['product_size_id']}")
 
 
+def parse_size_name(name: str, width: float, height: float) -> str:
+    """
+    Parse database size name into normalized format like '12x12'.
+    Tries to extract dimensions from name like '12 high x 12 wide'.
+    """
+    import re
+    # Try to match patterns like "12 high x 12 wide" or "10 high x 8 wide"
+    match = re.search(r'(\d+)\s*high\s*x\s*(\d+)\s*wide', name, re.IGNORECASE)
+    if match:
+        h, w = match.groups()
+        return f"{h}x{w}"
+    # Try simpler pattern like "12x12"
+    match = re.search(r'(\d+)\s*x\s*(\d+)', name)
+    if match:
+        return f"{match.group(1)}x{match.group(2)}"
+    # Fall back to computing from edges (assuming 12 units per dimension for TB2)
+    # TB2 is 12 rows high, 12 columns wide at max
+    h = int(round(height / 12))
+    w = int(round(width / 12))
+    return f"{h}x{w}"
+
+
 def get_board_sizes(conn: sqlite3.Connection, layout_id: int) -> Dict[str, Dict]:
     """
     Get all available board sizes for a layout.
@@ -75,11 +97,11 @@ def get_board_sizes(conn: sqlite3.Connection, layout_id: int) -> Dict[str, Dict]
 
     sizes = {}
     for row in cursor:
-        # Try to extract size name from description or compute from edges
         width = row["edge_right"] - row["edge_left"]
         height = row["edge_top"] - row["edge_bottom"]
-        # Normalize to approximate grid size (boards typically have ~1 unit per row/col)
-        name = row["name"] or row["description"] or f"{int(width)}x{int(height)}"
+        # Parse the name into normalized format
+        raw_name = row["name"] or row["description"] or ""
+        name = parse_size_name(raw_name, width, height)
         sizes[name] = {
             "id": row["id"],
             "edge_left": row["edge_left"],
@@ -218,13 +240,13 @@ def get_climbs(
             cs.difficulty_average,
             cs.quality_average,
             cs.benchmark_difficulty,
-            cs.ascent_count
+            cs.ascensionist_count
         FROM climbs c
         JOIN climb_stats cs ON c.uuid = cs.climb_uuid
         WHERE c.is_listed = 1
           AND c.is_draft = 0
           AND c.layout_id = ?
-          AND cs.ascent_count >= 1
+          AND cs.ascensionist_count >= 1
         ORDER BY c.uuid, cs.angle
     """, (layout_id,))
 
@@ -260,7 +282,7 @@ def get_climbs(
             "difficulty": row["display_difficulty"] or row["difficulty_average"] or 0,
             "quality": row["quality_average"] or 0,
             "is_classic": row["benchmark_difficulty"] is not None,
-            "ascent_count": row["ascent_count"] or 0,
+            "ascent_count": row["ascensionist_count"] or 0,
             "board_size": min_size,
             "board_size_idx": min_size_idx,
             "compatible_sizes": compatible,

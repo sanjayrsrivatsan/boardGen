@@ -70,6 +70,10 @@ class EMA:
 
 def train(config: dict):
     """Main training loop."""
+    import sys
+    # Unbuffered output for real-time logging
+    sys.stdout.reconfigure(line_buffering=True)
+
     board = config["board"]
     training_cfg = config.get("training", {})
 
@@ -126,6 +130,11 @@ def train(config: dict):
     checkpoint_dir = Path("checkpoints") / board
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    # Loss logging
+    log_file = checkpoint_dir / "training_log.csv"
+    with open(log_file, "w") as f:
+        f.write("epoch,loss,lr\n")
+
     best_loss = float("inf")
     global_step = 0
 
@@ -155,6 +164,10 @@ def train(config: dict):
         current_lr = scheduler.get_last_lr()[0]
 
         print(f"Epoch {epoch+1}/{epochs} | Loss: {avg_loss:.4f} | LR: {current_lr:.2e}")
+
+        # Log to CSV
+        with open(log_file, "a") as f:
+            f.write(f"{epoch+1},{avg_loss:.6f},{current_lr:.2e}\n")
 
         # Save checkpoint
         if (epoch + 1) % 10 == 0:
