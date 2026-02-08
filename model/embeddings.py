@@ -148,8 +148,6 @@ class LabelEmbedding(nn.Module):
     - difficulty: continuous
     - angle: discrete (optional, can be disabled for fixed-angle boards)
     - board_size: discrete (optional, can be disabled for single-size boards)
-    - is_classic: binary
-    - quality: continuous
     """
 
     def __init__(
@@ -184,23 +182,13 @@ class LabelEmbedding(nn.Module):
         else:
             self.size_embed = None
 
-        self.classic_embed = nn.Embedding(2, d_cond)
-
-        self.quality_embed = nn.Sequential(
-            nn.Linear(1, d_cond),
-            nn.SiLU(),
-            nn.Linear(d_cond, d_cond),
-        )
-
         # Null embeddings for CFG
         self.null_diff = nn.Parameter(torch.zeros(d_cond))
         self.null_angle = nn.Parameter(torch.zeros(d_cond))
         self.null_size = nn.Parameter(torch.zeros(d_cond))
-        self.null_classic = nn.Parameter(torch.zeros(d_cond))
-        self.null_quality = nn.Parameter(torch.zeros(d_cond))
 
         # Combiner - count active conditioning signals
-        n_conds = 3  # diff, classic, quality always present
+        n_conds = 1  # difficulty always present
         if angle_conditioning:
             n_conds += 1
         if size_conditioning:
@@ -217,28 +205,21 @@ class LabelEmbedding(nn.Module):
         difficulty: torch.Tensor,
         angle: torch.Tensor,
         board_size: torch.Tensor,
-        is_classic: torch.Tensor,
-        quality: torch.Tensor,
         mask_diff: torch.Tensor = None,
         mask_angle: torch.Tensor = None,
         mask_size: torch.Tensor = None,
-        mask_classic: torch.Tensor = None,
-        mask_quality: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Args:
             difficulty: (B,) continuous difficulty
             angle: (B,) discrete angle
             board_size: (B,) discrete size index
-            is_classic: (B,) binary
-            quality: (B,) continuous quality
             mask_*: (B,) bool tensors, True = use null embedding
 
         Returns:
             Combined embedding of shape (B, d_model)
         """
         B = difficulty.shape[0]
-        device = difficulty.device
 
         # Difficulty
         diff_emb = self.diff_embed(difficulty.float().unsqueeze(-1))
@@ -273,31 +254,12 @@ class LabelEmbedding(nn.Module):
         else:
             size_emb = None
 
-        # Classic
-        classic_emb = self.classic_embed(is_classic.long())
-        if mask_classic is not None:
-            classic_emb = torch.where(
-                mask_classic.unsqueeze(-1),
-                self.null_classic.expand(B, -1),
-                classic_emb,
-            )
-
-        # Quality
-        quality_emb = self.quality_embed(quality.float().unsqueeze(-1))
-        if mask_quality is not None:
-            quality_emb = torch.where(
-                mask_quality.unsqueeze(-1),
-                self.null_quality.expand(B, -1),
-                quality_emb,
-            )
-
         # Combine all active embeddings
         parts = [diff_emb]
         if angle_emb is not None:
             parts.append(angle_emb)
         if size_emb is not None:
             parts.append(size_emb)
-        parts.extend([classic_emb, quality_emb])
 
         combined = torch.cat(parts, dim=-1)
         return self.combiner(combined)
@@ -309,7 +271,6 @@ class LabelEmbedding(nn.Module):
             parts.append(self.null_angle)
         if self.size_conditioning:
             parts.append(self.null_size)
-        parts.extend([self.null_classic, self.null_quality])
 
         combined = torch.cat(parts)
         return self.combiner(combined.unsqueeze(0).expand(batch_size, -1))

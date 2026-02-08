@@ -72,8 +72,6 @@ def generate(
     difficulty: Optional[float] = None,
     angle: Optional[int] = None,
     board_size: Optional[str] = None,
-    is_classic: bool = False,
-    quality: Optional[float] = None,
     guidance_scale: float = 3.0,
     temperature: float = 0.8,
     n_holds: Optional[int] = None,
@@ -88,8 +86,6 @@ def generate(
         difficulty: Target numeric difficulty (None = unconditional)
         angle: Wall angle in degrees (ignored for moonboard)
         board_size: Target board size (e.g., "12x12", "10x8")
-        is_classic: Target classic/benchmark quality
-        quality: Target star rating
         guidance_scale: CFG strength
         temperature: Sampling temperature
         n_holds: Fixed number of holds (None = sample from distribution)
@@ -160,8 +156,6 @@ def generate(
     diff_tensor = torch.full((n_samples,), difficulty, device=device) if difficulty else None
     angle_tensor = torch.full((n_samples,), angle or 40, dtype=torch.long, device=device)
     size_tensor = torch.full((n_samples,), size_idx or 0, dtype=torch.long, device=device)
-    classic_tensor = torch.full((n_samples,), is_classic, dtype=torch.bool, device=device)
-    quality_tensor = torch.full((n_samples,), quality or 0, device=device) if quality else None
 
     # Generate
     print(f"Generating {n_samples} climbs for {board}...")
@@ -173,8 +167,6 @@ def generate(
         difficulty=diff_tensor,
         angle=angle_tensor,
         board_size=size_tensor,
-        is_classic=classic_tensor,
-        quality=quality_tensor,
         guidance_scale=guidance_scale,
         temperature=temperature,
         size_idx=size_idx,
@@ -201,8 +193,6 @@ def generate(
                 "difficulty": difficulty,
                 "angle": angle,
                 "board_size": board_size,
-                "is_classic": is_classic,
-                "quality": quality,
                 "guidance_scale": guidance_scale,
                 "temperature": temperature,
             },
@@ -218,8 +208,6 @@ def main():
     parser.add_argument("--difficulty", type=float, help="Target numeric difficulty")
     parser.add_argument("--angle", type=int, help="Wall angle in degrees")
     parser.add_argument("--size", type=str, help="Board size (e.g., 12x12, 10x8)")
-    parser.add_argument("--classic", action="store_true", help="Target classic quality")
-    parser.add_argument("--quality", type=float, help="Target star rating")
     parser.add_argument("--guidance", type=float, default=3.0, help="CFG strength")
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--n_holds", type=int, help="Fixed number of holds")
@@ -234,8 +222,6 @@ def main():
         difficulty=args.difficulty,
         angle=args.angle,
         board_size=args.size,
-        is_classic=args.classic,
-        quality=args.quality,
         guidance_scale=args.guidance,
         temperature=args.temperature,
         n_holds=args.n_holds,

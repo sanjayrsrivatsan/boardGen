@@ -174,13 +174,9 @@ class DiffusionTransformer(nn.Module):
         difficulty: torch.Tensor,
         angle: torch.Tensor,
         board_size: torch.Tensor,
-        is_classic: torch.Tensor,
-        quality: torch.Tensor,
         mask_diff: torch.Tensor = None,
         mask_angle: torch.Tensor = None,
         mask_size: torch.Tensor = None,
-        mask_classic: torch.Tensor = None,
-        mask_quality: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Forward pass.
@@ -188,7 +184,7 @@ class DiffusionTransformer(nn.Module):
         Args:
             token_ids: (B, L) token sequences
             t: (B,) timesteps in [0, 1]
-            difficulty, angle, board_size, is_classic, quality: conditioning labels
+            difficulty, angle, board_size: conditioning labels
             mask_*: CFG masking for each label
 
         Returns:
@@ -204,8 +200,8 @@ class DiffusionTransformer(nn.Module):
 
         # Label conditioning
         y_emb = self.label_embedding(
-            difficulty, angle, board_size, is_classic, quality,
-            mask_diff, mask_angle, mask_size, mask_classic, mask_quality,
+            difficulty, angle, board_size,
+            mask_diff, mask_angle, mask_size,
         )  # (B, d_model)
 
         # Combined conditioning

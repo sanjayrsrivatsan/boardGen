@@ -151,8 +151,6 @@ class DiffusionTrainer:
         difficulty = batch["difficulty"].to(device)
         angle = batch["angle"].to(device)
         board_size = batch["board_size"].to(device)
-        is_classic = batch["is_classic"].to(device)
-        quality = batch["quality"].to(device)
 
         B = x_0.shape[0]
 
@@ -168,13 +166,11 @@ class DiffusionTrainer:
         mask_diff = mask_all
         mask_angle = mask_all
         mask_size = mask_all
-        mask_classic = mask_all
-        mask_quality = mask_all
 
         # Forward pass
         logits = self.model(
-            x_t, t, difficulty, angle, board_size, is_classic, quality,
-            mask_diff, mask_angle, mask_size, mask_classic, mask_quality,
+            x_t, t, difficulty, angle, board_size,
+            mask_diff, mask_angle, mask_size,
         )
 
         # Compute loss

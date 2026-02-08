@@ -74,8 +74,6 @@ class GenerateRequest(BaseModel):
     difficulty: Optional[float] = None
     angle: Optional[int] = None
     board_size: Optional[str] = None
-    is_classic: bool = False
-    quality: Optional[float] = None
     guidance_scale: float = 3.0
     temperature: float = 0.8
     n_holds: Optional[int] = None
@@ -162,8 +160,6 @@ async def generate_climbs(request: GenerateRequest):
         difficulty=request.difficulty,
         angle=request.angle,
         board_size=request.board_size,
-        is_classic=request.is_classic,
-        quality=request.quality,
         guidance_scale=request.guidance_scale,
         temperature=request.temperature,
         n_holds=request.n_holds,

@@ -52,8 +52,6 @@ class DiffusionSampler:
         difficulty: Optional[torch.Tensor] = None,
         angle: Optional[torch.Tensor] = None,
         board_size: Optional[torch.Tensor] = None,
-        is_classic: Optional[torch.Tensor] = None,
-        quality: Optional[torch.Tensor] = None,
         guidance_scale: float = 1.0,
         temperature: float = 1.0,
         size_idx: int = None,
@@ -67,7 +65,7 @@ class DiffusionSampler:
             n_holds: Target number of holds per climb
             device: Compute device
             n_steps: Number of diffusion steps
-            difficulty, angle, board_size, is_classic, quality: Conditioning
+            difficulty, angle, board_size: Conditioning
             guidance_scale: CFG strength
             temperature: Sampling temperature
             size_idx: Board size index for logit masking (required for multi-size boards)
@@ -105,10 +103,6 @@ class DiffusionSampler:
             board_size = torch.full((n_samples,), board_size, dtype=torch.long, device=device)
         elif board_size is None and size_idx is not None:
             board_size = torch.full((n_samples,), size_idx, dtype=torch.long, device=device)
-        if is_classic is not None and not isinstance(is_classic, torch.Tensor):
-            is_classic = torch.full((n_samples,), is_classic, dtype=torch.bool, device=device)
-        if quality is not None and not isinstance(quality, torch.Tensor):
-            quality = torch.full((n_samples,), quality, device=device)
 
         # Diffusion steps from t=1 to t=0
         for step in range(n_steps):
@@ -120,7 +114,7 @@ class DiffusionSampler:
             # Get model predictions with CFG
             logits = get_conditional_logits(
                 self.model, x, t_tensor,
-                difficulty, angle, board_size, is_classic, quality,
+                difficulty, angle, board_size,
                 guidance_scale,
             )
 
