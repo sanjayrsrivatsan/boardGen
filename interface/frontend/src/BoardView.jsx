@@ -15,15 +15,16 @@ export default function BoardView({ config, climb }) {
   const width = imgSize * displayScale
   const height = imgSize * displayScale
 
-  // Coordinate mapping - calibrated to align with 12x12 board image
-  const boardPadX = 20
-  const boardPadY = 22
-  const boardWidth = 565
-  const boardHeight = 572
+  // T-nut grid boundaries (calibrated from user waypoints)
+  // Original image pixels: left=433, right=3890, top=295, bottom=3969
+  const imgLeft = 60.6    // 433 * 0.14
+  const imgRight = 544.6  // 3890 * 0.14
+  const imgTop = 41.3     // 295 * 0.14
+  const imgBottom = 555.7 // 3969 * 0.14
 
-  // Need to scale coords by their max values since they're normalized differently
-  const xMax = 0.842  // from vocab_meta
-  const yMax = 0.919
+  // Model coordinate ranges
+  const xMin = 0.0, xMax = 0.8421
+  const yMin = 0.0, yMax = 0.9189
 
   // Get active holds from climb
   const activeHolds = new Map()
@@ -106,9 +107,11 @@ export default function BoardView({ config, climb }) {
 
           if (!activeHold) return null
 
-          // Map normalized coords to image pixels
-          const x = boardPadX + (coord[0] / xMax) * boardWidth
-          const y = boardPadY + (1 - coord[1] / yMax) * boardHeight  // Flip Y
+          // Map model coords to image pixels
+          // X: model left (0) -> imgLeft, model right (xMax) -> imgRight
+          // Y: model bottom (0) -> imgBottom, model top (yMax) -> imgTop (flipped)
+          const x = imgLeft + ((coord[0] - xMin) / (xMax - xMin)) * (imgRight - imgLeft)
+          const y = imgBottom - ((coord[1] - yMin) / (yMax - yMin)) * (imgBottom - imgTop)
 
           const color = getRoleColor(activeHold.role)
 
