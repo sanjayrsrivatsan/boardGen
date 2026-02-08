@@ -8,8 +8,6 @@ export default function Controls({ config, onGenerate, loading }) {
   const [difficulty, setDifficulty] = useState(14)
   const [angle, setAngle] = useState(config.default_angle || 40)
   const [boardSize, setBoardSize] = useState(config.default_size || config.board_sizes?.[config.board_sizes.length - 1] || '')
-  const [isClassic, setIsClassic] = useState(false)
-  const [quality, setQuality] = useState(3.0)
   const [guidance, setGuidance] = useState(3.0)
   const [temperature, setTemperature] = useState(0.8)
   const [nSamples, setNSamples] = useState(10)
@@ -29,8 +27,6 @@ export default function Controls({ config, onGenerate, loading }) {
       difficulty,
       angle: config.angle_conditioning ? angle : undefined,
       board_size: config.size_conditioning ? boardSize : undefined,
-      is_classic: isClassic,
-      quality,
       guidance_scale: guidance,
       temperature,
       n_holds: nHolds ? parseInt(nHolds) : undefined,
@@ -106,32 +102,6 @@ export default function Controls({ config, onGenerate, loading }) {
           </select>
         </div>
       )}
-
-      {/* Classic toggle */}
-      <div style={{ marginBottom: '1rem' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={isClassic}
-            onChange={e => setIsClassic(e.target.checked)}
-          />
-          Target classic quality
-        </label>
-      </div>
-
-      {/* Quality */}
-      <div style={{ marginBottom: '1rem' }}>
-        <label style={labelStyle}>Quality: {quality.toFixed(1)} stars</label>
-        <input
-          type="range"
-          min={1}
-          max={5}
-          step={0.5}
-          value={quality}
-          onChange={e => setQuality(Number(e.target.value))}
-          style={{ width: '100%' }}
-        />
-      </div>
 
       {/* Advanced settings */}
       <details style={{ marginBottom: '1rem' }}>
