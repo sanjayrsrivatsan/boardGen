@@ -220,15 +220,30 @@ class DiffusionTransformer(nn.Module):
 
         return logits
 
+    # Model size configurations for scaling experiments
+    MODEL_SIZES = {
+        "tiny":   {"d_model": 64,  "n_heads": 2,  "n_layers": 2,  "d_ff": 256},
+        "small":  {"d_model": 128, "n_heads": 4,  "n_layers": 4,  "d_ff": 512},
+        "medium": {"d_model": 192, "n_heads": 6,  "n_layers": 6,  "d_ff": 768},
+        "large":  {"d_model": 256, "n_heads": 8,  "n_layers": 8,  "d_ff": 1024},
+        "xlarge": {"d_model": 384, "n_heads": 12, "n_layers": 12, "d_ff": 1536},
+    }
+
     @classmethod
     def from_config(cls, config: dict, vocab_meta: dict) -> "DiffusionTransformer":
         """Create model from config and vocabulary metadata."""
         model_size = config.get("model_size", "small")
 
-        if model_size == "small":
-            d_model, n_heads, n_layers, d_ff = 128, 4, 4, 512
-        else:  # "full"
+        if model_size in cls.MODEL_SIZES:
+            size_config = cls.MODEL_SIZES[model_size]
+            d_model = size_config["d_model"]
+            n_heads = size_config["n_heads"]
+            n_layers = size_config["n_layers"]
+            d_ff = size_config["d_ff"]
+        elif model_size == "full":  # Legacy support
             d_model, n_heads, n_layers, d_ff = 256, 8, 6, 1024
+        else:
+            raise ValueError(f"Unknown model size: {model_size}. Choose from {list(cls.MODEL_SIZES.keys())}")
 
         n_sizes = len(vocab_meta.get("board_sizes", ["default"]))
 
