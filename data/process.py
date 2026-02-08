@@ -554,13 +554,9 @@ def process_board(config: dict) -> dict:
     placements = get_valid_placements(conn, layout_id, set_ids)
     print(f"\n  Found {len(placements)} valid placements")
 
-    # Collapse color-based roles for Kilter board
-    collapse_roles = board.lower() == "kilter"
-    roles, role_id_remap = get_roles(conn, collapse_roles=collapse_roles)
-    if collapse_roles:
-        print(f"  Collapsed roles to {len(roles)}: {list(roles.values())}")
-    else:
-        print(f"  Found {len(roles)} roles: {list(roles.values())}")
+    # Collapse duplicate roles (all Aurora boards have redundant role IDs)
+    roles, role_id_remap = get_roles(conn, collapse_roles=True)
+    print(f"  Roles (collapsed): {list(roles.values())}")
 
     # Get extents from largest size
     board_extents = get_board_extents(conn, layout_id, default_size)
