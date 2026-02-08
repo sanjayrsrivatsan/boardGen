@@ -10,18 +10,17 @@ export default function BoardView({ config, climb }) {
   const { placement_coords, placement_ids, role_colors, role_names, board } = config
 
   // Board image dimensions and scaling
-  const imgWidth = 1080
-  const imgHeight = 1144
-  const displayScale = 0.55  // Scale down for display
-  const width = imgWidth * displayScale
-  const height = imgHeight * displayScale
+  const imgSize = 4320  // Square image
+  const displayScale = 0.14  // Scale down for display
+  const width = imgSize * displayScale
+  const height = imgSize * displayScale
 
   // Coordinate mapping - adjusted for image alignment
-  // The board image has some padding, these values may need tuning
-  const boardPadX = 50 * displayScale
-  const boardPadY = 30 * displayScale
-  const boardWidth = (imgWidth - 100) * displayScale
-  const boardHeight = (imgHeight - 60) * displayScale
+  // The board image has padding at edges, these values tuned for the 12x12 image
+  const boardPadX = 25
+  const boardPadY = 45
+  const boardWidth = width - 50
+  const boardHeight = height - 70
 
   // Get active holds from climb
   const activeHolds = new Map()
@@ -41,19 +40,21 @@ export default function BoardView({ config, climb }) {
     return role_colors?.middle || '#0000FF'
   }
 
-  // Board image path
-  const boardImage = `/app/images/tension/product_sizes_layouts_sets/21-2.png`
+  // Board image path - using the full 12x12 board image
+  const boardImage = `/app/images/tension/board-12x12.png`
 
   return (
     <div style={{ position: 'relative', width, height }}>
-      {/* Board background - dark wood texture effect */}
+      {/* Board background - light with subtle shadow */}
       <div
         style={{
           position: 'absolute',
           width: '100%',
           height: '100%',
-          background: 'linear-gradient(135deg, #2a1810 0%, #1a0f0a 50%, #2a1810 100%)',
+          background: '#fff',
           borderRadius: 8,
+          border: '1px solid #ddd',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       />
 
@@ -145,10 +146,11 @@ export default function BoardView({ config, climb }) {
         position: 'absolute',
         bottom: 10,
         left: 10,
-        background: 'rgba(0,0,0,0.7)',
+        background: 'rgba(255,255,255,0.95)',
         padding: '8px 12px',
         borderRadius: 6,
         fontSize: 11,
+        border: '1px solid #ddd',
       }}>
         {role_colors && Object.entries(role_colors).map(([role, color]) => (
           <div key={role} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -157,9 +159,9 @@ export default function BoardView({ config, climb }) {
               height: 12,
               borderRadius: '50%',
               background: color,
-              boxShadow: `0 0 6px ${color}`,
+              boxShadow: `0 0 4px ${color}`,
             }} />
-            <span style={{ color: '#ccc' }}>{role.replace('_', ' ')}</span>
+            <span style={{ color: '#333' }}>{role.replace('_', ' ')}</span>
           </div>
         ))}
       </div>
@@ -170,13 +172,14 @@ export default function BoardView({ config, climb }) {
           position: 'absolute',
           top: 10,
           right: 10,
-          background: 'rgba(0,0,0,0.7)',
+          background: 'rgba(255,255,255,0.95)',
           padding: '8px 12px',
           borderRadius: 6,
           fontSize: 12,
+          border: '1px solid #ddd',
         }}>
-          <div style={{ color: '#888' }}>Holds: {climb.n_holds}</div>
-          <div style={{ color: climb.valid ? '#4f4' : '#f44' }}>
+          <div style={{ color: '#666' }}>Holds: {climb.n_holds}</div>
+          <div style={{ color: climb.valid ? '#28a745' : '#dc3545' }}>
             {climb.valid ? '✓ Valid' : '✗ Invalid'}
           </div>
         </div>

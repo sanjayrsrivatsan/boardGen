@@ -56,9 +56,9 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {/* Header */}
-      <header style={{ padding: '1rem 2rem', background: '#16213e', borderBottom: '1px solid #333' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>BoardDiffusion</h1>
-        <p style={{ color: '#888', fontSize: '0.875rem' }}>AI-powered climbing problem generator</p>
+      <header style={{ padding: '1rem 2rem', background: '#fff', borderBottom: '1px solid #ddd', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#333' }}>BoardDiffusion</h1>
+        <p style={{ color: '#666', fontSize: '0.875rem' }}>AI-powered climbing problem generator</p>
       </header>
 
       {/* Main content */}
@@ -66,12 +66,12 @@ export default function App() {
         {/* Left panel: Board selector and controls */}
         <aside style={{ width: 300, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {/* Board selector */}
-          <div style={{ background: '#16213e', padding: '1rem', borderRadius: 8 }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Board</label>
+          <div style={{ background: '#fff', padding: '1rem', borderRadius: 8, border: '1px solid #ddd' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: '#333' }}>Board</label>
             <select
               value={selectedBoard || ''}
               onChange={e => setSelectedBoard(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem', borderRadius: 4, border: 'none', background: '#0f3460', color: '#fff' }}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: 4, border: '1px solid #ccc', background: '#fff', color: '#333' }}
             >
               {boards.map(b => (
                 <option key={b.name} value={b.name}>{b.name}</option>
@@ -101,7 +101,7 @@ export default function App() {
 
         {/* Right panel: Generated climbs */}
         <aside style={{ width: 300, display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto' }}>
-          <h3 style={{ padding: '0.5rem', background: '#16213e', borderRadius: 8 }}>
+          <h3 style={{ padding: '0.5rem 1rem', background: '#fff', borderRadius: 8, border: '1px solid #ddd', color: '#333' }}>
             Generated Climbs ({climbs.length})
           </h3>
           {climbs.map((climb, i) => (
@@ -117,7 +117,7 @@ export default function App() {
 
       {/* Error display */}
       {error && (
-        <div style={{ padding: '1rem', background: '#e94560', color: '#fff', textAlign: 'center' }}>
+        <div style={{ padding: '1rem', background: '#dc3545', color: '#fff', textAlign: 'center' }}>
           {error}
         </div>
       )}

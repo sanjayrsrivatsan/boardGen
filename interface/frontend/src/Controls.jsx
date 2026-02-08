@@ -41,21 +41,21 @@ export default function Controls({ config, onGenerate, loading }) {
     width: '100%',
     padding: '0.5rem',
     borderRadius: 4,
-    border: 'none',
-    background: '#0f3460',
-    color: '#fff',
+    border: '1px solid #ccc',
+    background: '#fff',
+    color: '#333',
   }
 
   const labelStyle = {
     display: 'block',
     marginBottom: '0.25rem',
     fontSize: '0.875rem',
-    color: '#aaa',
+    color: '#666',
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ background: '#16213e', padding: '1rem', borderRadius: 8 }}>
-      <h3 style={{ marginBottom: '1rem' }}>Generation Settings</h3>
+    <form onSubmit={handleSubmit} style={{ background: '#fff', padding: '1rem', borderRadius: 8, border: '1px solid #ddd' }}>
+      <h3 style={{ marginBottom: '1rem', color: '#333' }}>Generation Settings</h3>
 
       {/* Difficulty */}
       <div style={{ marginBottom: '1rem' }}>
@@ -68,7 +68,7 @@ export default function Controls({ config, onGenerate, loading }) {
           onChange={e => setDifficulty(Number(e.target.value))}
           style={{ width: '100%' }}
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#666' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#999' }}>
           <span>V0</span>
           <span>V{Math.round(difficulty/2 - 3)}</span>
           <span>V14+</span>
@@ -135,7 +135,7 @@ export default function Controls({ config, onGenerate, loading }) {
 
       {/* Advanced settings */}
       <details style={{ marginBottom: '1rem' }}>
-        <summary style={{ cursor: 'pointer', color: '#888' }}>Advanced</summary>
+        <summary style={{ cursor: 'pointer', color: '#666' }}>Advanced</summary>
         <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <div>
             <label style={labelStyle}>Guidance scale: {guidance}</label>
@@ -198,7 +198,7 @@ export default function Controls({ config, onGenerate, loading }) {
           padding: '0.75rem',
           borderRadius: 4,
           border: 'none',
-          background: loading ? '#555' : '#e94560',
+          background: loading ? '#999' : '#007bff',
           color: '#fff',
           fontSize: '1rem',
           fontWeight: 600,
