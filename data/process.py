@@ -23,6 +23,23 @@ import torch
 import yaml
 
 
+# Standard roles for climbing boards (order matters for role indices)
+# Kilter has duplicate role entries with different IDs - we collapse them by name
+STANDARD_ROLES = ["Start", "Middle", "Finish", "Foot Only"]
+
+# Mapping for color roles that sometimes appear in databases
+# Colors map to standard roles based on Kilter convention
+COLOR_ROLE_MAP = {
+    "Green": "Start",
+    "Blue": "Middle",
+    "Cyan": "Middle",
+    "Pink": "Finish",
+    "Magenta": "Finish",
+    "Yellow": "Foot Only",
+    "Red": "Middle",  # Less common, treat as middle
+}
+
+
 def load_config(config_path: str) -> dict:
     """Load board configuration from YAML file."""
     with open(config_path) as f:
@@ -163,19 +180,77 @@ def get_board_extents(conn: sqlite3.Connection, layout_id: int, size_name: str =
     return row[0], row[1], row[2], row[3]
 
 
-def get_roles(conn: sqlite3.Connection) -> Dict[int, str]:
-    """Get role ID -> name mapping."""
+def get_roles(conn: sqlite3.Connection, collapse_roles: bool = False) -> Tuple[Dict[int, str], Dict[int, int]]:
+    """
+    Get role ID -> name mapping.
+
+    If collapse_roles=True, collapses duplicate role names and color roles
+    to the 4 standard functional roles (Start, Middle, Finish, Foot Only).
+
+    Returns:
+        roles: dict mapping role_id -> role_name (collapsed if requested)
+        role_id_remap: dict mapping original_role_id -> collapsed_role_id (or identity if not collapsing)
+    """
     cursor = conn.execute("SELECT id, full_name FROM placement_roles ORDER BY id")
-    return {row["id"]: row["full_name"] for row in cursor}
+    raw_roles = {row["id"]: row["full_name"] for row in cursor}
+
+    if not collapse_roles:
+        # No collapsing - return identity mapping
+        role_id_remap = {rid: rid for rid in raw_roles}
+        return raw_roles, role_id_remap
+
+    # Collapse to standard roles by name
+    # Normalize role names: standard roles stay as-is, colors get mapped
+    def normalize_role(name: str) -> str:
+        if name in STANDARD_ROLES:
+            return name
+        if name in COLOR_ROLE_MAP:
+            return COLOR_ROLE_MAP[name]
+        # Unknown role - try to match partial name
+        for std in STANDARD_ROLES:
+            if std.lower() in name.lower():
+                return std
+        return name  # Keep as-is if no match
+
+    # Determine which standard roles are actually used
+    used_roles = set()
+    for name in raw_roles.values():
+        used_roles.add(normalize_role(name))
+
+    # Build collapsed role set (maintain standard order for known roles)
+    collapsed_roles = []
+    for std_role in STANDARD_ROLES:
+        if std_role in used_roles:
+            collapsed_roles.append(std_role)
+            used_roles.discard(std_role)
+    # Add any remaining non-standard roles
+    for role in sorted(used_roles):
+        collapsed_roles.append(role)
+
+    # Create new role_id -> name mapping with sequential IDs
+    roles = {i: name for i, name in enumerate(collapsed_roles)}
+
+    # Create mapping from original role_id -> collapsed role_id
+    role_id_remap = {}
+    collapsed_name_to_id = {name: i for i, name in enumerate(collapsed_roles)}
+    for orig_id, orig_name in raw_roles.items():
+        new_name = normalize_role(orig_name)
+        role_id_remap[orig_id] = collapsed_name_to_id[new_name]
+
+    return roles, role_id_remap
 
 
-def parse_frames(frames: str) -> List[Tuple[int, int]]:
+def parse_frames(frames: str, role_id_remap: Dict[int, int] = None) -> List[Tuple[int, int]]:
     """
     Parse Aurora frames string into list of (placement_id, role_id) pairs.
     Format: p{placement_id}r{role_id}p{placement_id}r{role_id}...
+
+    If role_id_remap is provided, remaps role IDs (used for collapsing color roles).
     """
     pattern = r"p(\d+)r(\d+)"
     matches = re.findall(pattern, frames)
+    if role_id_remap:
+        return [(int(p), role_id_remap.get(int(r), int(r))) for p, r in matches]
     return [(int(p), int(r)) for p, r in matches]
 
 
@@ -224,6 +299,7 @@ def get_climbs(
     board_sizes: Dict[str, Dict],
     size_order: List[str],
     L_max: int,
+    role_id_remap: Dict[int, int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch valid climbs with their stats and conditioning labels.
@@ -252,7 +328,7 @@ def get_climbs(
 
     climbs = []
     for row in cursor:
-        holds = parse_frames(row["frames"])
+        holds = parse_frames(row["frames"], role_id_remap)
 
         # Filter: all placements must be valid
         placement_set = set(p for p, r in holds)
@@ -478,8 +554,13 @@ def process_board(config: dict) -> dict:
     placements = get_valid_placements(conn, layout_id, set_ids)
     print(f"\n  Found {len(placements)} valid placements")
 
-    roles = get_roles(conn)
-    print(f"  Found {len(roles)} roles: {list(roles.values())}")
+    # Collapse color-based roles for Kilter board
+    collapse_roles = board.lower() == "kilter"
+    roles, role_id_remap = get_roles(conn, collapse_roles=collapse_roles)
+    if collapse_roles:
+        print(f"  Collapsed roles to {len(roles)}: {list(roles.values())}")
+    else:
+        print(f"  Found {len(roles)} roles: {list(roles.values())}")
 
     # Get extents from largest size
     board_extents = get_board_extents(conn, layout_id, default_size)
@@ -494,7 +575,7 @@ def process_board(config: dict) -> dict:
 
     # Get climbs with size tagging
     valid_placement_ids = set(placements.keys())
-    climbs = get_climbs(conn, layout_id, valid_placement_ids, placements, board_sizes, available_sizes, L_max)
+    climbs = get_climbs(conn, layout_id, valid_placement_ids, placements, board_sizes, available_sizes, L_max, role_id_remap)
     print(f"  Found {len(climbs)} valid climbs")
 
     if len(climbs) == 0:
