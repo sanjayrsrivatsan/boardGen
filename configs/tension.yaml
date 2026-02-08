@@ -21,10 +21,11 @@ weighting:
 training:
   batch_size: 64
   learning_rate: 3.0e-4
+  weight_decay: 0.0
   warmup_steps: 1000
-  epochs: 300
+  epochs: 1000
   ema_decay: 0.9999
-  p_uncond: 0.1
+  p_uncond: 0.15
 
 # Board-specific visualization
 role_colors:

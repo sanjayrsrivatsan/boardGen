@@ -20,12 +20,25 @@ from generation.postprocess import apply_validity_checks
 
 
 def load_model(board: str):
-    """Load trained model for a board."""
+    """Load trained model for a board.
+
+    Uses serving.pt if available (frozen checkpoint for stable serving),
+    otherwise falls back to best.pt.
+    """
     from model.transformer import DiffusionTransformer
 
-    checkpoint_path = Path("checkpoints") / board / "best.pt"
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"No trained model at {checkpoint_path}")
+    checkpoint_dir = Path("checkpoints") / board
+
+    # Prefer serving.pt (frozen) over best.pt (may be updated by training)
+    serving_path = checkpoint_dir / "serving.pt"
+    best_path = checkpoint_dir / "best.pt"
+
+    if serving_path.exists():
+        checkpoint_path = serving_path
+    elif best_path.exists():
+        checkpoint_path = best_path
+    else:
+        raise FileNotFoundError(f"No trained model in {checkpoint_dir}")
 
     checkpoint = torch.load(checkpoint_path, weights_only=False)
     config = checkpoint["config"]
@@ -35,6 +48,22 @@ def load_model(board: str):
     model.load_state_dict(checkpoint["model_state_dict"])
 
     return model, config, vocab_meta
+
+
+# Cache for loaded models (avoids reloading on each generation)
+_model_cache = {}
+
+
+def clear_model_cache(board: str = None):
+    """Clear cached model(s) to force reload.
+
+    Call this after updating serving.pt to load the new checkpoint.
+    """
+    global _model_cache
+    if board:
+        _model_cache.pop(board, None)
+    else:
+        _model_cache.clear()
 
 
 def generate(
@@ -72,12 +101,19 @@ def generate(
     from model.sampler import DiffusionSampler
     from data.dataset import ClimbDataset
 
-    # Load model
-    model, config, vocab_meta = load_model(board)
+    # Load model (cached to avoid reloading on each generation)
+    if board not in _model_cache:
+        model, config, vocab_meta = load_model(board)
+        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        model = model.to(device)
+        model.eval()
+        _model_cache[board] = {"model": model, "config": config, "vocab_meta": vocab_meta, "device": device}
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    model = model.to(device)
-    model.eval()
+    cached = _model_cache[board]
+    model = cached["model"]
+    config = cached["config"]
+    vocab_meta = cached["vocab_meta"]
+    device = cached["device"]
 
     # Resolve board size
     available_sizes = vocab_meta.get("board_sizes", [])

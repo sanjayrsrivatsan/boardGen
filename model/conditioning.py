@@ -15,17 +15,21 @@ def apply_cfg(
     guidance_scale: float,
 ) -> torch.Tensor:
     """
-    Apply classifier-free guidance.
+    Apply classifier-free guidance (standard formula).
 
     Args:
         logits_cond: Conditional logits (B, L, V)
         logits_uncond: Unconditional logits (B, L, V)
-        guidance_scale: CFG strength (s >= 0, typical 1-5)
+        guidance_scale: CFG strength (s >= 1 typical, s=1 means no guidance)
+            s=1: just conditional
+            s>1: amplify difference from unconditional
 
     Returns:
         Guided logits
     """
-    return (1 + guidance_scale) * logits_cond - guidance_scale * logits_uncond
+    # Standard CFG: uncond + s * (cond - uncond) = (1-s)*uncond + s*cond
+    # When s=1, returns cond. When s>1, extrapolates beyond cond.
+    return logits_uncond + guidance_scale * (logits_cond - logits_uncond)
 
 
 def get_conditional_logits(

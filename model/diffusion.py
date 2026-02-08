@@ -162,20 +162,14 @@ class DiffusionTrainer:
         # Forward process: mask tokens
         x_t, mask = self.diffusion.forward_process(x_0, t)
 
-        # CFG: randomly drop conditioning with probability p_uncond
-        mask_diff = torch.rand(B, device=device) < self.p_uncond
-        mask_angle = torch.rand(B, device=device) < self.p_uncond
-        mask_size = torch.rand(B, device=device) < self.p_uncond
-        mask_classic = torch.rand(B, device=device) < self.p_uncond
-        mask_quality = torch.rand(B, device=device) < self.p_uncond
-
-        # Sometimes drop all labels together
+        # CFG: drop ALL conditioning together with probability p_uncond
+        # This matches inference where we compare fully conditional vs fully unconditional
         mask_all = torch.rand(B, device=device) < self.p_uncond
-        mask_diff = mask_diff | mask_all
-        mask_angle = mask_angle | mask_all
-        mask_size = mask_size | mask_all
-        mask_classic = mask_classic | mask_all
-        mask_quality = mask_quality | mask_all
+        mask_diff = mask_all
+        mask_angle = mask_all
+        mask_size = mask_all
+        mask_classic = mask_all
+        mask_quality = mask_all
 
         # Forward pass
         logits = self.model(

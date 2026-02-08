@@ -90,7 +90,7 @@ export default function App() {
         </aside>
 
         {/* Center: Board visualization */}
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '1rem' }}>
           {boardConfig && (
             <BoardView
               config={boardConfig}
@@ -100,7 +100,7 @@ export default function App() {
         </div>
 
         {/* Right panel: Generated climbs */}
-        <aside style={{ width: 300, display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto' }}>
+        <aside style={{ width: 300, display: 'flex', flexDirection: 'column', gap: '0.5rem', overflowY: 'auto', maxHeight: 'calc(100vh - 100px)' }}>
           <h3 style={{ padding: '0.5rem 1rem', background: '#fff', borderRadius: 8, border: '1px solid #ddd', color: '#333' }}>
             Generated Climbs ({climbs.length})
           </h3>

@@ -68,7 +68,7 @@ class EMA:
                 param.data = self.backup[name]
 
 
-def train(config: dict):
+def train(config: dict, resume: bool = False, epochs_override: int = None):
     """Main training loop."""
     import sys
     # Unbuffered output for real-time logging
@@ -79,8 +79,9 @@ def train(config: dict):
 
     batch_size = training_cfg.get("batch_size", 64)
     lr = training_cfg.get("learning_rate", 3e-4)
+    weight_decay = training_cfg.get("weight_decay", 0.0)
     warmup_steps = training_cfg.get("warmup_steps", 1000)
-    epochs = training_cfg.get("epochs", 300)
+    epochs = epochs_override or training_cfg.get("epochs", 300)
     ema_decay = training_cfg.get("ema_decay", 0.9999)
     p_uncond = training_cfg.get("p_uncond", 0.1)
 
@@ -100,6 +101,23 @@ def train(config: dict):
 
     # Create model
     model = DiffusionTransformer.from_config(config, dataset.vocab_meta)
+
+    # Resume from checkpoint if requested
+    start_epoch = 0
+    checkpoint_dir = Path("checkpoints") / board
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    if resume:
+        best_pt = checkpoint_dir / "best.pt"
+        if best_pt.exists():
+            print(f"Resuming from {best_pt}")
+            checkpoint = torch.load(best_pt, weights_only=False)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            start_epoch = checkpoint.get("epoch", 0)
+            print(f"Resumed from epoch {start_epoch}")
+        else:
+            print("No checkpoint found, starting fresh")
+
     model = model.to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -113,12 +131,20 @@ def train(config: dict):
     trainer = DiffusionTrainer(model, diffusion, p_uncond)
 
     # Optimizer and scheduler
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    if weight_decay > 0:
+        print(f"Using weight decay: {weight_decay}")
+
+    total_steps = epochs * len(dataloader)
+    start_step = start_epoch * len(dataloader)
 
     def lr_lambda(step):
-        if step < warmup_steps:
-            return step / warmup_steps
-        progress = (step - warmup_steps) / (epochs * len(dataloader) - warmup_steps)
+        # Adjust step to account for resumed training
+        adjusted_step = step + start_step
+        if adjusted_step < warmup_steps:
+            return adjusted_step / warmup_steps
+        progress = (adjusted_step - warmup_steps) / (total_steps - warmup_steps)
+        progress = min(progress, 1.0)  # Clamp to avoid issues
         return 0.5 * (1 + torch.cos(torch.tensor(progress * 3.14159)).item())
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
@@ -126,19 +152,18 @@ def train(config: dict):
     # EMA
     ema = EMA(model, ema_decay)
 
-    # Training
-    checkpoint_dir = Path("checkpoints") / board
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
     # Loss logging
     log_file = checkpoint_dir / "training_log.csv"
-    with open(log_file, "w") as f:
-        f.write("epoch,loss,lr\n")
+    if not resume or not log_file.exists():
+        with open(log_file, "w") as f:
+            f.write("epoch,loss,lr\n")
 
     best_loss = float("inf")
     global_step = 0
 
-    for epoch in range(epochs):
+    print(f"Training from epoch {start_epoch + 1} to {epochs}")
+
+    for epoch in range(start_epoch, epochs):
         model.train()
         epoch_loss = 0.0
         n_batches = 0
@@ -204,10 +229,12 @@ def train(config: dict):
 def main():
     parser = argparse.ArgumentParser(description="Train diffusion model")
     parser.add_argument("--config", required=True, help="Path to board config YAML")
+    parser.add_argument("--resume", action="store_true", help="Resume from best checkpoint")
+    parser.add_argument("--epochs", type=int, help="Override number of epochs")
     args = parser.parse_args()
 
     config = load_config(args.config)
-    train(config)
+    train(config, resume=args.resume, epochs_override=args.epochs)
 
 
 if __name__ == "__main__":
