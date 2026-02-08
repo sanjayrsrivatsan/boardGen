@@ -579,29 +579,49 @@ def process_board(config: dict) -> dict:
         conn.close()
         return None
 
+    # Expand climbs to all compatible sizes (multi-size labeling)
+    # This allows the model to learn that small-board patterns are valid on larger boards
+    expanded_climbs = []
+    for climb in climbs:
+        for size_name in climb["compatible_sizes"]:
+            size_idx = available_sizes.index(size_name) if size_name in available_sizes else 0
+            expanded_climb = climb.copy()
+            expanded_climb["board_size"] = size_name
+            expanded_climb["board_size_idx"] = size_idx
+            expanded_climbs.append(expanded_climb)
+
+    print(f"  Expanded to {len(expanded_climbs)} samples (multi-size labeling)")
+
     # Tokenize climbs
     sequences = []
     seq_lengths = []
-    for climb in climbs:
+    for climb in expanded_climbs:
         seq, length = tokenize_climb(climb["holds"], vocab_meta, L_max)
         sequences.append(seq)
         seq_lengths.append(length)
 
     # Extract conditioning labels
-    difficulties = torch.tensor([c["difficulty"] for c in climbs], dtype=torch.float32)
-    angles = torch.tensor([c["angle"] for c in climbs], dtype=torch.int64)
-    board_size_indices = torch.tensor([c["board_size_idx"] for c in climbs], dtype=torch.int64)
-    is_classic = torch.tensor([c["is_classic"] for c in climbs], dtype=torch.bool)
-    quality = torch.tensor([c["quality"] for c in climbs], dtype=torch.float32)
-    ascent_count = torch.tensor([c["ascent_count"] for c in climbs], dtype=torch.int64)
+    difficulties = torch.tensor([c["difficulty"] for c in expanded_climbs], dtype=torch.float32)
+    angles = torch.tensor([c["angle"] for c in expanded_climbs], dtype=torch.int64)
+    board_size_indices = torch.tensor([c["board_size_idx"] for c in expanded_climbs], dtype=torch.int64)
+    is_classic = torch.tensor([c["is_classic"] for c in expanded_climbs], dtype=torch.bool)
+    quality = torch.tensor([c["quality"] for c in expanded_climbs], dtype=torch.float32)
+    ascent_count = torch.tensor([c["ascent_count"] for c in expanded_climbs], dtype=torch.int64)
 
-    # Compute sample weights
-    sample_weight = compute_sample_weights(
+    # Compute sample weights (based on original climbs, then expand)
+    original_weights = compute_sample_weights(
         climbs,
         weighting["alpha"],
         weighting["beta"],
         weighting["gamma"],
     )
+    # Map weights to expanded samples
+    climb_uuid_to_idx = {c["uuid"]: i for i, c in enumerate(climbs)}
+    expanded_weights = []
+    for ec in expanded_climbs:
+        orig_idx = climb_uuid_to_idx[ec["uuid"]]
+        expanded_weights.append(original_weights[orig_idx].item())
+    sample_weight = torch.tensor(expanded_weights, dtype=torch.float32)
 
     conn.close()
 
@@ -609,10 +629,10 @@ def process_board(config: dict) -> dict:
     print(f"\n  Dataset Statistics:")
     print(f"    Difficulty range: {difficulties.min():.1f} - {difficulties.max():.1f}")
     print(f"    Unique angles: {torch.unique(angles).tolist()}")
-    print(f"    Size distribution:")
+    print(f"    Size distribution (after expansion):")
     for i, size_name in enumerate(available_sizes):
         count = (board_size_indices == i).sum().item()
-        print(f"      {size_name}: {count} climbs ({100*count/len(climbs):.1f}%)")
+        print(f"      {size_name}: {count} samples ({100*count/len(expanded_climbs):.1f}%)")
     print(f"    Classics: {is_classic.sum().item()} ({100*is_classic.float().mean():.1f}%)")
     print(f"    Hold count range: {min(seq_lengths)} - {max(seq_lengths)}")
 
@@ -629,7 +649,7 @@ def process_board(config: dict) -> dict:
         "quality": quality,
         "ascent_count": ascent_count,
         "sample_weight": sample_weight,
-        "climb_uuids": [c["uuid"] for c in climbs],
+        "climb_uuids": [c["uuid"] for c in expanded_climbs],  # UUID repeated for each size
         "vocab_meta": vocab_meta,
     }
 
