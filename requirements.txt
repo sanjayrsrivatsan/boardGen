@@ -1,0 +1,24 @@
+# Core
+torch>=2.0
+numpy
+pandas
+scipy
+
+# Data
+boardlib
+
+# Model
+einops
+
+# Interface
+fastapi
+uvicorn
+jinja2
+
+# Visualization
+matplotlib
+seaborn
+
+# Config
+pyyaml
+wandb

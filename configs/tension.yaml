@@ -1,0 +1,32 @@
+board: tension
+db_path: data/tension.sqlite
+layout_id: 1                     # primary mirror layout - discover from database
+set_ids: [1, 2, 3]              # hold sets to include - discover from database
+angle_conditioning: true
+angle_range: [0, 65]
+L_max: 24
+model_size: small                # "small" or "full"
+
+# Sample weighting hyperparameters
+weighting:
+  alpha: 2.0   # classic weight
+  beta: 1.0    # log(ascent_count) weight
+  gamma: 0.5   # quality weight
+
+# Training hyperparameters
+training:
+  batch_size: 64
+  learning_rate: 3.0e-4
+  warmup_steps: 1000
+  epochs: 300
+  ema_decay: 0.9999
+  p_uncond: 0.1
+
+# Board-specific visualization
+role_colors:
+  start: "#00FF00"
+  middle: "#0000FF"
+  finish: "#FF0000"
+  foot_only: "#FF00FF"
+
+deep_link_scheme: "tensionboard2://climb/"
