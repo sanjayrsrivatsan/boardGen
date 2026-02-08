@@ -15,12 +15,15 @@ export default function BoardView({ config, climb }) {
   const width = imgSize * displayScale
   const height = imgSize * displayScale
 
-  // Coordinate mapping - adjusted for image alignment
-  // The board image has padding at edges, these values tuned for the 12x12 image
-  const boardPadX = 25
-  const boardPadY = 45
-  const boardWidth = width - 50
-  const boardHeight = height - 70
+  // Coordinate mapping - calibrated to align with 12x12 board image
+  const boardPadX = 20
+  const boardPadY = 22
+  const boardWidth = 565
+  const boardHeight = 572
+
+  // Need to scale coords by their max values since they're normalized differently
+  const xMax = 0.842  // from vocab_meta
+  const yMax = 0.919
 
   // Get active holds from climb
   const activeHolds = new Map()
@@ -104,8 +107,8 @@ export default function BoardView({ config, climb }) {
           if (!activeHold) return null
 
           // Map normalized coords to image pixels
-          const x = boardPadX + coord[0] * boardWidth
-          const y = height - boardPadY - coord[1] * boardHeight  // Flip Y
+          const x = boardPadX + (coord[0] / xMax) * boardWidth
+          const y = boardPadY + (1 - coord[1] / yMax) * boardHeight  // Flip Y
 
           const color = getRoleColor(activeHold.role)
 
