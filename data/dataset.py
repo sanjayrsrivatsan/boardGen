@@ -8,10 +8,10 @@ Provides:
 """
 
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 
 import torch
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler, Subset
 
 
 class ClimbDataset(Dataset):
@@ -134,3 +134,92 @@ def collate_fn(batch: list) -> Dict[str, torch.Tensor]:
         key: torch.stack([item[key] for item in batch])
         for key in batch[0].keys()
     }
+
+
+def train_val_split(
+    dataset: ClimbDataset,
+    val_fraction: float = 0.1,
+    seed: int = 42,
+) -> Tuple["TrainValDataset", "TrainValDataset"]:
+    """
+    Split dataset into train and validation sets.
+
+    Args:
+        dataset: Full ClimbDataset
+        val_fraction: Fraction of data for validation (default 10%)
+        seed: Random seed for reproducibility
+
+    Returns:
+        (train_dataset, val_dataset) tuple
+    """
+    n = len(dataset)
+    n_val = int(n * val_fraction)
+    n_train = n - n_val
+
+    # Deterministic split
+    generator = torch.Generator().manual_seed(seed)
+    indices = torch.randperm(n, generator=generator).tolist()
+
+    train_indices = indices[:n_train]
+    val_indices = indices[n_train:]
+
+    train_dataset = TrainValDataset(dataset, train_indices)
+    val_dataset = TrainValDataset(dataset, val_indices)
+
+    return train_dataset, val_dataset
+
+
+class TrainValDataset(Dataset):
+    """
+    Subset wrapper that preserves ClimbDataset properties.
+    """
+
+    def __init__(self, parent: ClimbDataset, indices: List[int]):
+        self.parent = parent
+        self.indices = indices
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        return self.parent[self.indices[idx]]
+
+    @property
+    def vocab_meta(self):
+        return self.parent.vocab_meta
+
+    @property
+    def sample_weights(self) -> torch.Tensor:
+        """Get sample weights for this subset."""
+        return self.parent.sample_weights[self.indices]
+
+    @property
+    def board(self) -> str:
+        return self.parent.board
+
+    @property
+    def L_max(self) -> int:
+        return self.parent.L_max
+
+    @property
+    def V_total(self) -> int:
+        return self.parent.V_total
+
+    @property
+    def MASK_TOKEN(self) -> int:
+        return self.parent.MASK_TOKEN
+
+    @property
+    def PAD_TOKEN(self) -> int:
+        return self.parent.PAD_TOKEN
+
+    @property
+    def board_sizes(self) -> list:
+        return self.parent.board_sizes
+
+    @property
+    def n_sizes(self) -> int:
+        return self.parent.n_sizes
+
+    def get_size_logit_mask(self, size_idx: int) -> torch.Tensor:
+        return self.parent.get_size_logit_mask(size_idx)

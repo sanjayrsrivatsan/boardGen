@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import yaml
 
-from data.dataset import ClimbDataset, get_dataloader
+from data.dataset import ClimbDataset, get_dataloader, train_val_split
 from model.transformer import DiffusionTransformer
 from model.diffusion import MaskedDiffusion, DiffusionTrainer
 
@@ -95,12 +95,18 @@ def train(config: dict, resume: bool = False, epochs_override: int = None):
         print("Run 'python data/process.py --config <config>' first.")
         return
 
-    dataset = ClimbDataset(data_path)
-    dataloader = get_dataloader(dataset, batch_size, weighted=True)
-    print(f"Dataset: {len(dataset)} samples")
+    full_dataset = ClimbDataset(data_path)
+
+    # Train/val split
+    val_fraction = training_cfg.get("val_fraction", 0.1)
+    train_dataset, val_dataset = train_val_split(full_dataset, val_fraction=val_fraction)
+    print(f"Dataset: {len(full_dataset)} samples (train: {len(train_dataset)}, val: {len(val_dataset)})")
+
+    train_loader = get_dataloader(train_dataset, batch_size, weighted=True)
+    val_loader = get_dataloader(val_dataset, batch_size, weighted=False, shuffle=False)
 
     # Create model
-    model = DiffusionTransformer.from_config(config, dataset.vocab_meta)
+    model = DiffusionTransformer.from_config(config, train_dataset.vocab_meta)
 
     # Resume from checkpoint if requested
     start_epoch = 0
@@ -125,8 +131,8 @@ def train(config: dict, resume: bool = False, epochs_override: int = None):
 
     # Create diffusion and trainer
     diffusion = MaskedDiffusion(
-        MASK_TOKEN=dataset.MASK_TOKEN,
-        PAD_TOKEN=dataset.PAD_TOKEN,
+        MASK_TOKEN=train_dataset.MASK_TOKEN,
+        PAD_TOKEN=train_dataset.PAD_TOKEN,
     )
     trainer = DiffusionTrainer(model, diffusion, p_uncond)
 
@@ -135,8 +141,8 @@ def train(config: dict, resume: bool = False, epochs_override: int = None):
     if weight_decay > 0:
         print(f"Using weight decay: {weight_decay}")
 
-    total_steps = epochs * len(dataloader)
-    start_step = start_epoch * len(dataloader)
+    total_steps = epochs * len(train_loader)
+    start_step = start_epoch * len(train_loader)
 
     def lr_lambda(step):
         # Adjust step to account for resumed training
@@ -156,19 +162,20 @@ def train(config: dict, resume: bool = False, epochs_override: int = None):
     log_file = checkpoint_dir / "training_log.csv"
     if not resume or not log_file.exists():
         with open(log_file, "w") as f:
-            f.write("epoch,loss,lr\n")
+            f.write("epoch,train_loss,val_loss,lr\n")
 
-    best_loss = float("inf")
+    best_val_loss = float("inf")
     global_step = 0
 
     print(f"Training from epoch {start_epoch + 1} to {epochs}")
 
     for epoch in range(start_epoch, epochs):
+        # Training
         model.train()
-        epoch_loss = 0.0
+        train_loss = 0.0
         n_batches = 0
 
-        for batch in dataloader:
+        for batch in train_loader:
             optimizer.zero_grad()
 
             loss = trainer.training_step(batch, device)
@@ -181,20 +188,36 @@ def train(config: dict, resume: bool = False, epochs_override: int = None):
             scheduler.step()
             ema.update()
 
-            epoch_loss += loss.item()
+            train_loss += loss.item()
             n_batches += 1
             global_step += 1
 
-        avg_loss = epoch_loss / n_batches
+        avg_train_loss = train_loss / n_batches
+
+        # Validation (using EMA weights)
+        ema.apply_shadow()
+        model.eval()
+        val_loss = 0.0
+        n_val_batches = 0
+
+        with torch.no_grad():
+            for batch in val_loader:
+                loss = trainer.training_step(batch, device)
+                val_loss += loss.item()
+                n_val_batches += 1
+
+        avg_val_loss = val_loss / n_val_batches
+        ema.restore()
+
         current_lr = scheduler.get_last_lr()[0]
 
-        print(f"Epoch {epoch+1}/{epochs} | Loss: {avg_loss:.4f} | LR: {current_lr:.2e}")
+        print(f"Epoch {epoch+1}/{epochs} | Train: {avg_train_loss:.4f} | Val: {avg_val_loss:.4f} | LR: {current_lr:.2e}")
 
         # Log to CSV
         with open(log_file, "a") as f:
-            f.write(f"{epoch+1},{avg_loss:.6f},{current_lr:.2e}\n")
+            f.write(f"{epoch+1},{avg_train_loss:.6f},{avg_val_loss:.6f},{current_lr:.2e}\n")
 
-        # Save checkpoint
+        # Save periodic checkpoint
         if (epoch + 1) % 10 == 0:
             ema.apply_shadow()
             checkpoint = {
@@ -202,27 +225,30 @@ def train(config: dict, resume: bool = False, epochs_override: int = None):
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "config": config,
-                "vocab_meta": dataset.vocab_meta,
-                "loss": avg_loss,
+                "vocab_meta": train_dataset.vocab_meta,
+                "train_loss": avg_train_loss,
+                "val_loss": avg_val_loss,
             }
             torch.save(checkpoint, checkpoint_dir / f"epoch_{epoch+1}.pt")
             ema.restore()
 
-        if avg_loss < best_loss:
-            best_loss = avg_loss
+        # Save best model based on validation loss
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
             ema.apply_shadow()
             checkpoint = {
                 "epoch": epoch + 1,
                 "model_state_dict": model.state_dict(),
                 "config": config,
-                "vocab_meta": dataset.vocab_meta,
-                "loss": avg_loss,
+                "vocab_meta": train_dataset.vocab_meta,
+                "train_loss": avg_train_loss,
+                "val_loss": avg_val_loss,
             }
             torch.save(checkpoint, checkpoint_dir / "best.pt")
             ema.restore()
-            print(f"  New best model saved (loss: {best_loss:.4f})")
+            print(f"  New best model saved (val_loss: {best_val_loss:.4f})")
 
-    print(f"\nTraining complete. Best loss: {best_loss:.4f}")
+    print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
     print(f"Checkpoints saved to {checkpoint_dir}")
 
 
