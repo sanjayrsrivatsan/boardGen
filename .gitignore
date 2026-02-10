@@ -4,6 +4,7 @@ processed/*.pt
 
 # Model checkpoints
 checkpoints/
+scaling_results/**/*.pt
 
 # Python
 __pycache__/

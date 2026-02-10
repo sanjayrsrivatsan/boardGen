@@ -222,6 +222,9 @@ class DiffusionTransformer(nn.Module):
 
     # Model size configurations for scaling experiments
     MODEL_SIZES = {
+        "pico":   {"d_model": 24,  "n_heads": 1,  "n_layers": 1,  "d_ff": 96},
+        "nano":   {"d_model": 32,  "n_heads": 2,  "n_layers": 1,  "d_ff": 128},
+        "micro":  {"d_model": 48,  "n_heads": 2,  "n_layers": 2,  "d_ff": 192},
         "tiny":   {"d_model": 64,  "n_heads": 2,  "n_layers": 2,  "d_ff": 256},
         "small":  {"d_model": 128, "n_heads": 4,  "n_layers": 4,  "d_ff": 512},
         "medium": {"d_model": 192, "n_heads": 6,  "n_layers": 6,  "d_ff": 768},
